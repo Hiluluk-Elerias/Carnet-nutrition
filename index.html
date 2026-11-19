@@ -1167,7 +1167,11 @@ async function analysePhoto(file) {
   try {
     const data = await resizeImage(file);
     const hint = ($('#hint') && $('#hint').value.trim()) || '';
-    const prompt = `Tu es nutritionniste. Identifie chaque aliment visible sur cette photo de repas, estime sa quantité en grammes et ses valeurs nutritionnelles pour cette quantité (références françaises, table Ciqual si possible).${hint ? ' Précisions de l’utilisateur : ' + hint : ''}
+    const prompt = `Tu es nutritionniste. Analyse cette photo de repas.
+1. Identifie chaque composant visible, y compris ce qui est dessous ou mélangé (féculents sous la garniture, sauce, huile).
+2. Estime le poids de chaque composant tel que servi (cuit) en t’aidant de la taille de l’assiette ou du bol (assiette ≈ 26 cm, bol ≈ 15 cm), des couverts et de la hauteur des aliments. Les quantités sont souvent SOUS-estimées sur photo : un bol de nouilles ou de pâtes contient en général 250 à 350 g cuits, une assiette de riz 200 à 250 g.
+3. Compte les matières grasses de cuisson et les sauces comme des éléments à part, même si elles se voient peu.
+4. Donne les valeurs nutritionnelles pour ces quantités (table Ciqual si possible ; glucides hors fibres).${hint ? ' Précisions de l’utilisateur : ' + hint : ''}
 Réponds UNIQUEMENT avec un tableau JSON, sans texte autour : [{"nom":"…","grammes":0,"kcal":0,"proteines":0,"glucides":0,"lipides":0,"fibres":0}]`;
     const txt = await askAI([{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } }, { type: 'text', text: prompt }]);
     showAiItems(cutJSON(txt, '[', ']'), 'photo');
@@ -1179,13 +1183,26 @@ function showAiItems(items, src = 'photo') {
     <div class="ai-row" data-i="${i}"><input type="checkbox" checked class="ck"><input class="nm" value="${esc(it.nom)}"><input class="gr" type="number" value="${r0(it.grammes)}">
     <div class="n"><input class="k" type="number" value="${r0(it.kcal)}"><input class="p" type="number" value="${r1(it.proteines)}"><input class="c" type="number" value="${r1(it.glucides)}"><input class="f" type="number" value="${r1(it.lipides)}"></div>
     <input type="hidden" class="fb" value="${r1(it.fibres)}"></div>`).join('') +
-    `<div class="row" style="margin-top:8px"><label style="margin:0">Repas</label>${mealSelect(null)}</div>
+    `<div class="card" id="aiTot" style="margin:10px 0 6px"></div>
+     <label>Portion globale (si l’estimation te paraît trop petite ou trop grande)</label>
+     <div class="row wrap" id="aiScale">${[0.75, 1, 1.25, 1.5].map(x => `<button class="btn sm ${x === 1 ? 'pri' : ''}" data-x="${x}">×${String(x).replace('.', ',')}</button>`).join('')}</div>
+     <div class="row" style="margin-top:10px"><label style="margin:0">Repas</label>${mealSelect(null)}</div>
      <button class="btn pri" id="aiAdd" style="margin-top:10px">Ajouter la sélection</button>`;
+  const tot = () => { const t = { kcal: 0, p: 0, c: 0, f: 0 }; out.querySelectorAll('.ai-row').forEach(row => { if (!row.querySelector('.ck').checked) return; t.kcal += num(row.querySelector('.k').value) || 0; t.p += num(row.querySelector('.p').value) || 0; t.c += num(row.querySelector('.c').value) || 0; t.f += num(row.querySelector('.f').value) || 0; });
+    $('#aiTot').innerHTML = `<b>Total : ${r0(t.kcal)} kcal</b> · P ${r0(t.p)} · L ${r0(t.f)} · G ${r0(t.c)}`; };
+  let factor = 1;
+  out.querySelectorAll('#aiScale [data-x]').forEach(b => b.onclick = () => {
+    const x = +b.dataset.x, k = x / factor; factor = x;
+    out.querySelectorAll('.ai-row').forEach(row => { for (const c of ['.gr', '.k', '.p', '.c', '.f', '.fb']) { const el = row.querySelector(c); el.value = c === '.gr' || c === '.k' ? r0((num(el.value) || 0) * k) : r1((num(el.value) || 0) * k); } row._g0 = num(row.querySelector('.gr').value) || 0; });
+    out.querySelectorAll('#aiScale [data-x]').forEach(y => y.classList.toggle('pri', y === b)); tot();
+  });
+  out.addEventListener('input', tot); out.addEventListener('change', tot);
   // si on change les grammes, on recalcule proportionnellement
   out.querySelectorAll('.ai-row').forEach(row => {
-    const gEl = row.querySelector('.gr'); let g0 = num(gEl.value) || 0;
-    gEl.onchange = () => { const g = num(gEl.value) || 0; if (g0 > 0) for (const c of ['.k', '.p', '.c', '.f', '.fb']) { const el = row.querySelector(c); el.value = r1((num(el.value) || 0) * g / g0); } g0 = g; };
+    const gEl = row.querySelector('.gr'); row._g0 = num(gEl.value) || 0;
+    gEl.onchange = () => { const g = num(gEl.value) || 0, g0 = row._g0; if (g0 > 0) for (const c of ['.k', '.p', '.c', '.f', '.fb']) { const el = row.querySelector(c); el.value = r1((num(el.value) || 0) * g / g0); } row._g0 = g; tot(); };
   });
+  tot();
   $('#aiAdd').onclick = () => {
     const meal = $('#meal').value; let n = 0;
     out.querySelectorAll('.ai-row').forEach(row => {
