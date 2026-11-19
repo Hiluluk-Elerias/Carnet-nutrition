@@ -90,6 +90,9 @@ label{font-size:12px;font-weight:500;color:var(--mute);display:block;margin-bott
 .meas{display:grid;grid-template-columns:1fr 92px;gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--line)}
 .meas input{padding:8px;text-align:right}
 .remind{border-left:4px solid var(--acc)}
+.mh-tot{display:flex;align-items:baseline;gap:8px;font-size:13px;color:var(--mute);font-weight:500}
+.mh-tot b{color:var(--ink);font-size:14px}
+.mh-tot .chips{margin:0}
 .mbtn{border:0;background:var(--card);color:var(--mute);border-radius:999px;width:30px;height:24px;font-size:16px;line-height:1;box-shadow:var(--shadow)}
 .fibcard .it{display:flex;justify-content:space-between;gap:10px;align-items:center}
 .chip{display:inline-block;border:0;background:color-mix(in srgb,var(--acc) 12%,transparent);color:var(--acc);font-weight:600;font-size:13px;padding:8px 12px;border-radius:999px;margin:12px 6px 0 0}
@@ -155,7 +158,8 @@ tr:last-child td{border-bottom:0}
 <script>
 /* ===================== Données ===================== */
 const KEY = 'carnet-nutrition-v1';
-const MEALS = ['Petit-déjeuner', 'Déjeuner', 'Dîner', 'Collations'];
+const MEALS = ['Petit-déjeuner', 'Déjeuner', 'Collations', 'Dîner'];
+const MEAL_HOUR = { 'Petit-déjeuner': '08:00', 'Déjeuner': '12:30', 'Collations': '16:30', 'Dîner': '19:30' };
 // Mensurations (cm), côté droit pour les membres. mf = colonne de l'export MacroFactor « Body Metrics »
 const MEAS = [
   { k: 'taille', l: 'Tour de taille (nombril)', mf: 'waist' }, { k: 'hanches', l: 'Hanches', mf: 'hips' },
@@ -207,7 +211,7 @@ function defaults() {
       smooth: 0.9,          // lissage de la dépense (0 = aucun)
       kcalPerKg: 7000,      // réglages calés sur l'historique MacroFactor (écart moyen ≈ 38 kcal)
       apiKey: '', model: 'claude-sonnet-5-5',
-      measDay: 0, measTime: '09:00' // rappel mensurations : 0 = dimanche, 6 = samedi, -1 = désactivé
+      measDay: 0, measTime: '09:00', journalView: 'repas' // rappel mensurations : 0 = dimanche, 6 = samedi, -1 = désactivé
     },
     days: {},   // 'AAAA-MM-JJ' -> {entries:[], weight:null}
     foods: [],  // mes aliments : {id,name,code,per:{kcal,p,c,f,fib},serving}
@@ -363,7 +367,13 @@ function fmtDate(k) {
   if (k === addDays(t, -1)) return 'Hier';
   return new Date(k + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
 }
-function defaultMeal() { const h = new Date().getHours(); return h < 10 ? 0 : h < 15 ? 1 : h < 18 ? 3 : h < 23 ? 2 : 3; }
+function defaultMeal() { const h = new Date().getHours(); return h < 10 ? 0 : h < 15 ? 1 : h < 18 ? 2 : h < 23 ? 3 : 2; }
+const nowHM = () => { const d = new Date(); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+// Heure d'un aliment : celle saisie, sinon l'heure type de son repas
+const entryTime = e => (e && /^\d{1,2}:\d{2}/.test(e.time || '') ? String(e.time).padStart(5, '0').slice(0, 5) : MEAL_HOUR[e && e.meal] || '12:00');
+const defaultTime = meal => cur === today() ? nowHM() : (MEAL_HOUR[meal] || '12:00');
+const timeInput = v => `<div><label>Heure</label><input type="time" id="tm" value="${v}"></div>`;
+const pickTime = meal => { const el = document.getElementById('tm'); return el && el.value ? el.value : defaultTime(meal); };
 function toast(m, ms = 2500) { const t = $('#toast'); if (!t) return; t.textContent = m; t.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => t.style.display = 'none', ms); }
 function scale(per, g) { const o = {}; for (const x of ['kcal', 'p', 'c', 'f', 'fib']) o[x] = per[x] == null ? 0 : per[x] * g / 100; return o; }
 
@@ -503,16 +513,26 @@ function renderJournal() {
   <div class="card wcard2"><div><div style="font-weight:700">Poids du matin</div><div class="mute xs">${(() => { const tt = displayTrend(), tr = tt.length ? tt[tt.length - 1] : null; return tr != null ? 'Tendance ' + r1(tr) + ' kg' : 'Pèse-toi au réveil'; })()}</div></div>
     <div class="pill-in sm"><input id="wIn" type="number" step="0.1" inputmode="decimal" placeholder="—" value="${d && d.weight != null ? d.weight : ''}"><span class="mute">kg</span></div>
     <div class="pill-in sm"><input id="bfIn" type="number" step="0.1" inputmode="decimal" placeholder="—" value="${d && d.bf != null ? d.bf : ''}"><span class="mute">%</span></div></div>${updateCard()}${reminderCard()}<!--FIB-->`;
-  const groups = {}; (d ? d.entries : []).forEach((e, i) => { (groups[e.meal] = groups[e.meal] || []).push([e, i]); });
-  const names = [...MEALS, ...Object.keys(groups).filter(m => !MEALS.includes(m))];
-  for (const m of names) {
-    const list = (groups[m] || []).sort((a, b) => String(a[0].time || '').localeCompare(String(b[0].time || '')));
-    const mk = list.reduce((s, [e]) => s + (+e.kcal || 0), 0);
-    h += `<div class="meal"><div class="meal-h"><span>${esc(m)}</span><span class="row" style="gap:10px"><span class="mute">${list.length ? r0(mk) + ' kcal' : ''}</span>${list.length ? `<button class="mbtn" data-mm="${esc(m)}" aria-label="Options du repas">⋯</button>` : ''}</span></div><div class="card list">`;
-    for (const [e, i] of list) h += `<div class="entry" data-i="${i}"><div class="irow">${fi(e.name, !!e.recipeId)}<div><div class="e-name">${esc(e.name)}</div><div class="mute xs">${e.grams ? r0(e.grams) + ' g' : 'portion'}${e.src === 'photo' ? ' · photo IA' : e.src === 'describe' ? ' · décrit (IA)' : ''}</div></div></div>
+  const chipsOf = list => { const t2 = { kcal: 0, p: 0, c: 0, f: 0 }; for (const [e] of list) for (const x in t2) t2[x] += +e[x] || 0; return t2; };
+  const head = (title, list, menu) => { const tt = chipsOf(list); return `<div class="meal"><div class="meal-h"><span>${title}</span><span class="row" style="gap:10px">${list.length ? `<span class="mh-tot"><b>${r0(tt.kcal)}</b> kcal<span class="chips"><span style="color:var(--p)">${r0(tt.p)}P</span><span style="color:var(--f)">${r0(tt.f)}L</span><span style="color:var(--c)">${r0(tt.c)}G</span></span></span>` : ''}${menu && list.length ? `<button class="mbtn" data-mm="${esc(menu)}" aria-label="Options du repas">⋯</button>` : ''}</span></div><div class="card list">`; };
+  const row = (e, i, sub) => `<div class="entry" data-i="${i}"><div class="irow">${fi(e.name, !!e.recipeId)}<div><div class="e-name">${esc(e.name)}</div><div class="mute xs">${sub}${e.grams ? r0(e.grams) + ' g' : 'portion'}${e.src === 'photo' ? ' · photo IA' : e.src === 'describe' ? ' · décrit (IA)' : ''}</div></div></div>
       <div class="e-right"><b>${r0(e.kcal)}</b> <span class="mute xs">kcal</span><div class="chips"><span style="color:var(--p)">${r0(e.p)}P</span><span style="color:var(--f)">${r0(e.f)}L</span><span style="color:var(--c)">${r0(e.c)}G</span></div></div></div>`;
-    if (MEALS.includes(m)) h += `<button class="add-in" data-meal="${esc(m)}">+ Ajouter</button>`;
-    h += `</div></div>`;
+  const all = (d ? d.entries : []).map((e, i) => [e, i]).sort((a, b) => entryTime(a[0]).localeCompare(entryTime(b[0])));
+  if (S.settings.journalView === 'heure') {
+    const byH = {}; for (const x of all) (byH[entryTime(x[0]).slice(0, 2)] = byH[entryTime(x[0]).slice(0, 2)] || []).push(x);
+    const hours = Object.keys(byH).sort();
+    if (!hours.length) h += `<div class="card"><p class="mute" style="margin:0">Rien de saisi pour l’instant. Touche + pour ajouter un aliment.</p></div>`;
+    for (const hh of hours) { h += head(`${+hh} h`, byH[hh]); for (const [e, i] of byH[hh]) h += row(e, i, entryTime(e) + ' · ' + esc(e.meal) + ' · '); h += `</div></div>`; }
+  } else {
+    const groups = {}; for (const x of all) (groups[x[0].meal] = groups[x[0].meal] || []).push(x);
+    const names = [...MEALS, ...Object.keys(groups).filter(m => !MEALS.includes(m))];
+    for (const m of names) {
+      const list = groups[m] || [];
+      h += head(esc(m), list, m);
+      for (const [e, i] of list) h += row(e, i, '');
+      if (MEALS.includes(m)) h += `<button class="add-in" data-meal="${esc(m)}">+ Ajouter</button>`;
+      h += `</div></div>`;
+    }
   }
   if (d && d.entries.length) h += `<button class="add-in" id="copyDay" style="padding-left:6px">Copier toute la journée vers…</button>`;
   h = h.replace('<!--FIB-->', fiberCard(t, T));
@@ -548,6 +568,7 @@ function openAdd(meal) {
 function openSheet(html) {
   $('#sheetIn').innerHTML = '<div class="grab"></div>' + (ingDraft ? `<div class="mute xs" style="margin-bottom:6px">Ingrédient pour « ${esc(ingDraft.name || 'nouvelle recette')} »</div>` : '') + html;
   if (ingDraft && $('#meal')) $('#meal').parentElement.style.display = 'none';
+  if (ingDraft && $('#tm')) $('#tm').parentElement.style.display = 'none';
   sheetMode = 'sheet';
   $('#sheet').classList.add('on'); document.body.classList.add('lock'); $('#sheetIn').scrollTop = 0;
 }
@@ -613,6 +634,7 @@ function openQty(food, editIndex) {
   openSheet(`<h3>${esc(food.name)}</h3>
     <div class="mute">Pour 100 g : ${r0(food.per.kcal)} kcal · P ${r1(food.per.p)} · G ${r1(food.per.c)} · L ${r1(food.per.f)} · Fibres ${food.per.fib == null ? '?' : r1(food.per.fib)}</div>
     <div class="grid2" style="margin:10px 0"><div><label>Quantité (g)</label><input id="g" type="number" inputmode="decimal" value="${r1(g0)}"></div><div><label>Repas</label>${mealSelect(e ? e.meal : null)}</div></div>
+    <div class="grid2" style="margin:-2px 0 10px">${timeInput(e ? entryTime(e) : defaultTime(pendingMeal || MEALS[defaultMeal()]))}<div></div></div>
     ${food.serving ? `<div class="row wrap" style="margin-bottom:8px"><button class="btn sm" data-g="${food.serving}">1 portion (${r0(food.serving)} g)</button><button class="btn sm" data-g="${food.serving * 2}">2 portions</button><button class="btn sm" data-g="100">100 g</button></div>` : ''}
     <div id="calc" class="card"></div>
     ${isMine ? '' : `<label class="row" style="color:var(--ink);font-size:14px"><input type="checkbox" id="keep"> Ajouter à mes aliments</label>`}
@@ -624,7 +646,7 @@ function openQty(food, editIndex) {
   if (e) $('#del').onclick = () => { S.days[cur].entries.splice(editIndex, 1); save(); closeSheet(); };
   $('#ok').onclick = () => {
     const g = num($('#g').value) || 0;
-    const entry = { id: e ? e.id : uid(), name: food.name, code: food.code, meal: $('#meal').value, grams: g, per: food.per, ...scale(food.per, g) };
+    const entry = { id: e ? e.id : uid(), name: food.name, code: food.code, meal: $('#meal').value, time: pickTime($('#meal').value), grams: g, per: food.per, ...scale(food.per, g) };
     if (ingDraft && !e) { if ($('#keep') && $('#keep').checked) S.foods.push({ id: uid(), name: food.name, code: food.code, per: food.per, serving: food.serving || g }); return addIngredient(entry); }
     if (e) S.days[cur].entries[editIndex] = entry; else day(cur).entries.push(entry);
     if ($('#keep') && $('#keep').checked) S.foods.push({ id: uid(), name: food.name, code: food.code, per: food.per, serving: food.serving || g });
@@ -643,6 +665,7 @@ function openManual(e, editIndex, code) {
   openSheet(`<h3>${e ? 'Modifier' : 'Saisie manuelle'}</h3>
     <label>Nom</label><input id="mName" value="${esc(v.name || '')}" placeholder="ex. Lasagnes maison">
     <div class="grid2" style="margin-top:8px"><div><label>Quantité (g)</label><input id="mG" type="number" inputmode="decimal" value="${v.grams || ''}" placeholder="facultatif"></div><div><label>Repas</label>${mealSelect(v.meal || null)}</div></div>
+    <div class="grid2" style="margin-top:8px">${timeInput(e ? entryTime(e) : defaultTime(pendingMeal || MEALS[defaultMeal()]))}<div></div></div>
     <label class="row" style="color:var(--ink);font-size:14px;margin:10px 0"><input type="checkbox" id="mPer"> Valeurs ci-dessous pour 100 g</label>
     <div class="grid5"><div><label>kcal</label><input id="mK" type="number" inputmode="decimal" value="${v.kcal != null ? r0(v.kcal) : ''}"></div><div><label>Prot.</label><input id="mP" type="number" inputmode="decimal" value="${v.p != null ? r1(v.p) : ''}"></div><div><label>Gluc.</label><input id="mC" type="number" inputmode="decimal" value="${v.c != null ? r1(v.c) : ''}"></div><div><label>Lip.</label><input id="mF" type="number" inputmode="decimal" value="${v.f != null ? r1(v.f) : ''}"></div><div><label>Fibres</label><input id="mFib" type="number" inputmode="decimal" value="${v.fib != null ? r1(v.fib) : ''}"></div></div>
     <label class="row" style="color:var(--ink);font-size:14px;margin-top:10px"><input type="checkbox" id="mKeep"> Ajouter à mes aliments (nécessite « pour 100 g »)</label>
@@ -655,10 +678,10 @@ function openManual(e, editIndex, code) {
     let entry;
     if ($('#mPer').checked) {
       if (!g) return toast('Indique la quantité en grammes');
-      entry = { id: uid(), name, code, meal: $('#meal').value, grams: g, per: vals, ...scale(vals, g) };
+      entry = { id: uid(), name, code, meal: $('#meal').value, time: pickTime($('#meal').value), grams: g, per: vals, ...scale(vals, g) };
       if ($('#mKeep').checked) S.foods.push({ id: uid(), name, code, per: vals, serving: g });
     } else {
-      entry = { id: uid(), name, meal: $('#meal').value, grams: g, per: g ? scale(vals, 10000 / g) : null, ...vals };
+      entry = { id: uid(), name, meal: $('#meal').value, time: pickTime($('#meal').value), grams: g, per: g ? scale(vals, 10000 / g) : null, ...vals };
     }
     if (ingDraft && !e) return addIngredient(entry);
     if (e) S.days[cur].entries[editIndex] = entry; else day(cur).entries.push(entry);
@@ -700,7 +723,7 @@ function openRecipeLog(r) {
   $('#ok').onclick = () => {
     const n = num($('#np').value) || 0; if (!n) return toast('Indique le nombre de portions');
     const g = W ? n * W / (r.portions || 1) : null;
-    day(cur).entries.push({ id: uid(), name: r.name, meal: $('#meal').value, recipeId: r.id, portions: n, grams: g, per, ...vals() });
+    day(cur).entries.push({ id: uid(), name: r.name, meal: $('#meal').value, time: defaultTime($('#meal').value), recipeId: r.id, portions: n, grams: g, per, ...vals() });
     save(); closeSheet(); toast('Recette ajoutée');
   };
 }
@@ -882,7 +905,7 @@ Réponds UNIQUEMENT avec un objet JSON, sans texte autour : {"nom":"…","portio
   };
 }
 /* ---------- Copier, repas habituels ---------- */
-function cloneEntry(e, meal) { const { id, time, ...rest } = e; return { ...JSON.parse(JSON.stringify(rest)), id: uid(), meal: meal || e.meal }; }
+function cloneEntry(e, meal) { const { id, ...rest } = e; const c = { ...JSON.parse(JSON.stringify(rest)), id: uid(), meal: meal || e.meal }; if (meal && meal !== e.meal || !c.time) c.time = MEAL_HOUR[c.meal] || '12:00'; return c; }
 function addEntries(list, meal, k = cur) { const d = day(k); for (const e of list) d.entries.push(cloneEntry(e, meal)); save(); }
 function openMealMenu(m) {
   const list = S.days[cur].entries.filter(e => e.meal === m), kc = list.reduce((s, e) => s + (+e.kcal || 0), 0);
@@ -959,7 +982,7 @@ function showAiItems(items, src = 'photo') {
       if (!row.querySelector('.ck').checked) return;
       const q = c => num(row.querySelector(c).value) || 0;
       const g = q('.gr'), vals = { kcal: q('.k'), p: q('.p'), c: q('.c'), f: q('.f'), fib: q('.fb') };
-      day(cur).entries.push({ id: uid(), name: row.querySelector('.nm').value || 'Aliment', meal, grams: g, per: g ? scale(vals, 10000 / g) : null, ...vals, src }); n++;
+      day(cur).entries.push({ id: uid(), name: row.querySelector('.nm').value || 'Aliment', meal, time: defaultTime(meal), grams: g, per: g ? scale(vals, 10000 / g) : null, ...vals, src }); n++;
     });
     save(); closeSheet(); toast(n + ' aliment(s) ajouté(s)');
   };
@@ -1304,6 +1327,9 @@ function renderReglages() {
   ${NATIVE ? `<div class="card"><h2>Appli Android</h2><p class="mute" style="margin-top:0">Version installée : ${UPD.installed ? '1.' + UPD.installed : esc(UPD.name || '?')}${UPD.latest ? ' · dernière publiée : 1.' + UPD.latest : ''}</p>
     <div class="row wrap">${updAvailable() ? '<button class="btn pri" id="doUpd2">Mettre à jour</button>' : ''}<button class="btn" id="chkUpd">Vérifier les mises à jour</button></div>
     <p class="mute xs" style="margin-bottom:0">Les améliorations de l’appli arrivent toutes seules. Une réinstallation n’est demandée que pour les changements de la partie Android.</p></div>` : ''}
+  <div class="card"><h2>Affichage du journal</h2>
+    <select data-k="journalView" data-str><option value="repas" ${s.journalView !== 'heure' ? 'selected' : ''}>Par repas</option><option value="heure" ${s.journalView === 'heure' ? 'selected' : ''}>Par heure</option></select>
+    <p class="mute xs" style="margin-bottom:0">Le total des calories et des macros s’affiche en face de chaque repas ou de chaque heure.</p></div>
   <div class="card"><h2>Rappel des mensurations</h2>
     <div class="grid2"><div><label>Jour</label><select data-k="measDay"><option value="-1" ${s.measDay < 0 ? 'selected' : ''}>Désactivé</option><option value="6" ${s.measDay == 6 ? 'selected' : ''}>Samedi</option><option value="0" ${s.measDay == 0 ? 'selected' : ''}>Dimanche</option></select></div>
     <div><label>Heure</label><input type="time" data-k="measTime" data-str value="${esc(s.measTime || '09:00')}"></div></div>
