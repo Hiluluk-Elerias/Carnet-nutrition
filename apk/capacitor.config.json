@@ -1,0 +1,13 @@
+{
+  "appId": "io.github.hilulukelerias.carnetnutrition",
+  "appName": "Nutrition",
+  "webDir": "www",
+  "server": {
+    "url": "https://hiluluk-elerias.github.io/Carnet-nutrition/",
+    "errorPath": "hors-ligne.html",
+    "allowNavigation": ["hiluluk-elerias.github.io"]
+  },
+  "android": {
+    "backgroundColor": "#14181d"
+  }
+}

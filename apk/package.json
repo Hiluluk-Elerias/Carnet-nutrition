@@ -1,0 +1,11 @@
+{
+  "name": "carnet-nutrition-android",
+  "private": true,
+  "description": "Coque Android (Capacitor) de l'appli web Carnet nutrition",
+  "dependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/app": "^7.0.0",
+    "@capacitor/cli": "^7.0.0",
+    "@capacitor/core": "^7.0.0"
+  }
+}
