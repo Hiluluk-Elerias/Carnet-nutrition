@@ -93,8 +93,12 @@ label{font-size:12px;font-weight:500;color:var(--mute);display:block;margin-bott
 @keyframes up{from{transform:translateY(30px);opacity:.4}to{transform:none;opacity:1}}
 .grab{width:40px;height:5px;border-radius:3px;background:var(--line);margin:4px auto 12px}
 .sheet h3{margin:2px 0 12px;font-size:20px;font-weight:800;letter-spacing:-.01em}
-.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
-.tile{border:0;background:var(--card2);color:var(--ink);border-radius:16px;padding:14px 4px 11px;display:flex;flex-direction:column;align-items:center;gap:7px;font-size:12px;font-weight:600}
+.tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.tiles.t3{grid-template-columns:repeat(3,1fr)}
+.tile{border:0;background:var(--card2);color:var(--ink);border-radius:16px;padding:13px 2px 10px;display:flex;flex-direction:column;align-items:center;gap:7px;font-size:11px;font-weight:600}
+.ing{display:grid;grid-template-columns:1fr 78px 30px;gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.ing input{padding:7px 8px;text-align:right}
+.ing .x{border:0;background:none;color:var(--danger);font-size:20px}
 .tile svg{width:26px;height:26px;stroke:var(--acc)}
 .it{padding:11px 0;border-top:1px solid var(--line);cursor:pointer}
 .it>div:first-child{font-weight:600;font-size:14.5px}
@@ -152,13 +156,14 @@ function defaults() {
     },
     days: {},   // 'AAAA-MM-JJ' -> {entries:[], weight:null}
     foods: [],  // mes aliments : {id,name,code,per:{kcal,p,c,f,fib},serving}
+    recipes: [], // mes recettes : {id,name,portions,cooked,items:[{name,grams,per,kcal,p,c,f,fib}],note}
     mf: {}      // import MacroFactor : 'AAAA-MM-JJ' -> {exp, trend}
   };
 }
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY));
-    if (s) { const d = defaults(); s.settings = { ...d.settings, ...s.settings }; s.days = s.days || {}; s.foods = s.foods || []; s.mf = s.mf || {}; return s; }
+    if (s) { const d = defaults(); s.settings = { ...d.settings, ...s.settings }; s.days = s.days || {}; s.foods = s.foods || []; s.mf = s.mf || {}; s.recipes = s.recipes || []; return s; }
   } catch (e) {}
   return defaults();
 }
@@ -198,7 +203,7 @@ async function ghPut(path, obj, sha, message) {
 }
 const dayUsed = d => d && (d.entries.length || d.weight != null);
 function localMonth(m) { const o = {}; for (const [k, d] of Object.entries(S.days)) if (k.startsWith(m) && dayUsed(d)) o[k] = d; return o; }
-function profil() { const { apiKey, ...settings } = S.settings; return { version: 1, settings, foods: S.foods, mf: S.mf }; }
+function profil() { const { apiKey, ...settings } = S.settings; return { version: 1, settings, foods: S.foods, recipes: S.recipes, mf: S.mf }; }
 let syncTimer = null, syncing = false, syncAgain = false;
 function scheduleSync(ms = 2000) { if (!CFG.token) return; clearTimeout(syncTimer); syncTimer = setTimeout(sync, ms); }
 function setSync(state, text) {
@@ -250,7 +255,7 @@ async function syncProfil(remoteSha) {
   const g = await ghGet(path); if (!g) return;
   const p = g.json || {};
   S.settings = { ...S.settings, ...(p.settings || {}), apiKey: S.settings.apiKey };
-  S.foods = p.foods || S.foods; S.mf = p.mf || S.mf;
+  S.foods = p.foods || S.foods; S.mf = p.mf || S.mf; S.recipes = p.recipes || S.recipes;
   META.sha[path] = g.sha; META.base[path] = JSON.stringify(profil());
 }
 async function sync() {
@@ -379,7 +384,7 @@ function optimize() {
 }
 
 /* ===================== Interface ===================== */
-let tab = 'journal', cur = today(), stream = null, scanning = false, pendingMeal = null;
+let tab = 'journal', cur = today(), stream = null, scanning = false, pendingMeal = null, ingDraft = null;
 const ic = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
 const IC = {
   journal: ic('<path d="M4 5h16M4 12h16M4 19h10"/>'),
@@ -390,7 +395,8 @@ const IC = {
   search: ic('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>'),
   scan: ic('<path d="M4 7V5a1 1 0 0 1 1-1h2M17 4h2a1 1 0 0 1 1 1v2M20 17v2a1 1 0 0 1-1 1h-2M7 20H5a1 1 0 0 1-1-1v-2M8 8v8M11 8v8M14 8v8M17 8v8"/>'),
   photo: ic('<path d="M4 8a2 2 0 0 1 2-2h2l1.5-2h5L16 6h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.5" r="3.5"/>'),
-  manual: ic('<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>')
+  manual: ic('<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>'),
+  recipe: ic('<path d="M4 11h16a8 8 0 0 1-16 0z"/><path d="M8 7c0-1.5 1-2 1-3M12 7c0-1.5 1-2 1-3M16 7c0-1.5 1-2 1-3"/>')
 };
 const TABS = { journal: 'Journal', poids: 'Poids', depense: 'Dépense', reglages: 'Réglages' };
 
@@ -460,15 +466,19 @@ function openAdd(meal) {
   pendingMeal = meal || null;
   const rec = recentFoods().slice(0, 10);
   openSheet(`<h3>Ajouter${meal ? ' · ' + esc(meal) : ''}</h3>
-    <div class="tiles"><button class="tile" id="tS">${IC.search}Rechercher</button><button class="tile" id="tB">${IC.scan}Scanner</button><button class="tile" id="tP">${IC.photo}Photo IA</button><button class="tile" id="tM">${IC.manual}Manuel</button></div>
+    <div class="tiles"><button class="tile" id="tS">${IC.search}Rechercher</button><button class="tile" id="tB">${IC.scan}Scanner</button><button class="tile" id="tR">${IC.recipe}Recettes</button><button class="tile" id="tP">${IC.photo}Photo IA</button><button class="tile" id="tM">${IC.manual}Manuel</button></div>
     ${rec.length ? `<label style="margin-top:18px">Récents</label><div id="rec">${rec.map((f, i) => foodItem(f, i, 'rec')).join('')}</div>` : ''}`);
-  $('#tS').onclick = () => openSearch(); $('#tB').onclick = openScan; $('#tP').onclick = openPhoto; $('#tM').onclick = () => openManual();
+  $('#tS').onclick = () => openSearch(); $('#tB').onclick = openScan; $('#tP').onclick = openPhoto; $('#tM').onclick = () => openManual(); $('#tR').onclick = openRecipes;
   document.querySelectorAll('#rec .it').forEach(el => el.onclick = () => openQty(rec[+el.dataset.i]));
 }
 
 /* ---------- Feuilles (fenêtres du bas) ---------- */
-function openSheet(html) { $('#sheetIn').innerHTML = '<div class="grab"></div>' + html; $('#sheet').classList.add('on'); $('#sheetIn').scrollTop = 0; }
-function closeSheet() { stopCam(); pendingMeal = null; $('#sheet').classList.remove('on'); render(); }
+function openSheet(html) {
+  $('#sheetIn').innerHTML = '<div class="grab"></div>' + (ingDraft ? `<div class="mute xs" style="margin-bottom:6px">Ingrédient pour « ${esc(ingDraft.name || 'nouvelle recette')} »</div>` : '') + html;
+  if (ingDraft && $('#meal')) $('#meal').parentElement.style.display = 'none';
+  $('#sheet').classList.add('on'); $('#sheetIn').scrollTop = 0;
+}
+function closeSheet() { stopCam(); if (ingDraft) return openRecipeEditor(); pendingMeal = null; $('#sheet').classList.remove('on'); render(); }
 function stopCam() { scanning = false; if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; } }
 function mealSelect(sel) { return `<select id="meal">${[...MEALS].map((m, i) => `<option value="${esc(m)}" ${(sel == null ? (pendingMeal ? m === pendingMeal : i === defaultMeal()) : sel === m) ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select>`; }
 
@@ -485,17 +495,19 @@ function openSearch() {
     <div class="row"><input id="q" placeholder="ex. skyr, flocons d'avoine…" enterkeyhint="search"><button class="btn pri" id="qGo">OK</button></div>
     <div id="res" style="margin-top:8px"></div><p><button class="btn" id="close">Fermer</button></p>`);
   $('#close').onclick = closeSheet;
-  let pool = { mine: S.foods, rec: recentFoods(), off: [] };
+  let pool = { mine: S.foods, rec: recentFoods(), off: [], rcp: ingDraft ? [] : S.recipes };
   const show = (q) => {
     const ql = (q || '').toLowerCase();
     const mine = pool.mine.filter(f => !ql || f.name.toLowerCase().includes(ql));
     const rec = pool.rec.filter(f => !ql || f.name.toLowerCase().includes(ql));
     let h = '';
-    if (mine.length) h += `<label>Mes aliments</label>` + mine.map(f => foodItem(f, pool.mine.indexOf(f), 'mine')).join('');
+    const rcp = pool.rcp.filter(r => !ql || r.name.toLowerCase().includes(ql));
+    if (rcp.length) h += `<label>Mes recettes</label>` + rcp.map(r => recipeItem(r, pool.rcp.indexOf(r))).join('');
+    if (mine.length) h += `<label style="margin-top:8px">Mes aliments</label>` + mine.map(f => foodItem(f, pool.mine.indexOf(f), 'mine')).join('');
     if (rec.length) h += `<label style="margin-top:8px">Récents</label>` + rec.map(f => foodItem(f, pool.rec.indexOf(f), 'rec')).join('');
     if (pool.off.length) h += `<label style="margin-top:8px">Open Food Facts</label>` + pool.off.map((f, i) => foodItem(f, i, 'off')).join('');
     $('#res').innerHTML = h || '<p class="mute">Rien pour l’instant. Lance une recherche.</p>';
-    document.querySelectorAll('#res .it').forEach(el => el.onclick = () => openQty(pool[el.dataset.src][+el.dataset.i]));
+    document.querySelectorAll('#res .it').forEach(el => el.onclick = () => el.dataset.src === 'rcp' ? openRecipeLog(pool.rcp[+el.dataset.i]) : openQty(pool[el.dataset.src][+el.dataset.i]));
   };
   const go = async () => {
     const q = $('#q').value.trim(); if (!q) return show('');
@@ -539,6 +551,7 @@ function openQty(food, editIndex) {
   $('#ok').onclick = () => {
     const g = num($('#g').value) || 0;
     const entry = { id: e ? e.id : uid(), name: food.name, code: food.code, meal: $('#meal').value, grams: g, per: food.per, ...scale(food.per, g) };
+    if (ingDraft && !e) { if ($('#keep') && $('#keep').checked) S.foods.push({ id: uid(), name: food.name, code: food.code, per: food.per, serving: food.serving || g }); return addIngredient(entry); }
     if (e) S.days[cur].entries[editIndex] = entry; else day(cur).entries.push(entry);
     if ($('#keep') && $('#keep').checked) S.foods.push({ id: uid(), name: food.name, code: food.code, per: food.per, serving: food.serving || g });
     save(); closeSheet(); toast(e ? 'Modifié' : 'Ajouté');
@@ -573,8 +586,88 @@ function openManual(e, editIndex, code) {
     } else {
       entry = { id: uid(), name, meal: $('#meal').value, grams: g, per: g ? scale(vals, 10000 / g) : null, ...vals };
     }
+    if (ingDraft && !e) return addIngredient(entry);
     if (e) S.days[cur].entries[editIndex] = entry; else day(cur).entries.push(entry);
     save(); closeSheet(); toast('Ajouté');
+  };
+}
+
+
+/* ---------- Recettes ---------- */
+const itemVals = it => it.per && it.grams ? scale(it.per, it.grams) : { kcal: +it.kcal || 0, p: +it.p || 0, c: +it.c || 0, f: +it.f || 0, fib: +it.fib || 0 };
+function recipeTotals(r) { const t = { kcal: 0, p: 0, c: 0, f: 0, fib: 0 }; for (const it of r.items) { const v = itemVals(it); for (const x in t) t[x] += v[x]; } return t; }
+function recipeWeight(r) { if (r.cooked > 0) return +r.cooked; if (r.items.length && r.items.every(it => it.grams > 0)) return r.items.reduce((s, it) => s + +it.grams, 0); return null; }
+function recipePortion(r) { const t = recipeTotals(r), n = Math.max(1, +r.portions || 1), o = {}; for (const x in t) o[x] = t[x] / n; return o; }
+function recipeItem(r, i) { const v = recipePortion(r); return `<div class="it" data-src="rcp" data-i="${i}"><div>${esc(r.name)}</div><div class="mute">${r0(v.kcal)} kcal / portion · P ${r0(v.p)} · L ${r0(v.f)} · G ${r0(v.c)}${r.portions > 1 ? ' · ' + r.portions + ' portions' : ''}</div></div>`; }
+function openRecipes() {
+  ingDraft = null;
+  openSheet(`<h3>Mes recettes</h3>
+    ${S.recipes.length ? `<div id="rl">${S.recipes.map((r, i) => recipeItem(r, i)).join('')}</div>` : '<p class="mute">Aucune recette pour l’instant.</p>'}
+    <div class="row" style="margin-top:14px"><button class="btn pri" id="newR">+ Nouvelle recette</button><button class="btn" id="close">Fermer</button></div>`);
+  document.querySelectorAll('#rl .it').forEach(el => el.onclick = () => openRecipeLog(S.recipes[+el.dataset.i]));
+  $('#newR').onclick = () => { ingDraft = { id: uid(), name: '', portions: 1, cooked: null, items: [], isNew: true }; openRecipeEditor(); };
+  $('#close').onclick = closeSheet;
+}
+function openRecipeLog(r) {
+  const W = recipeWeight(r), n0 = 1;
+  openSheet(`<h3>${esc(r.name)}</h3>
+    <div class="mute">${r.items.length} ingrédient${r.items.length > 1 ? 's' : ''} · ${r.portions || 1} portion${r.portions > 1 ? 's' : ''}${W ? ' · ' + r0(W) + ' g au total' : ''}</div>
+    <div class="grid2" style="margin:10px 0"><div><label>Portions</label><input id="np" type="number" step="0.25" inputmode="decimal" value="${n0}"></div><div><label>Repas</label>${mealSelect(null)}</div></div>
+    <div class="row wrap" style="margin-bottom:8px">${[0.5, 1, 1.5, 2].map(x => `<button class="btn sm" data-np="${x}">${String(x).replace('.', ',')}</button>`).join('')}</div>
+    <div id="calc" class="card"></div>
+    <div class="row wrap" style="margin-top:10px"><button class="btn pri" id="ok">Ajouter</button><button class="btn" id="edit">Modifier la recette</button><button class="btn" id="cancel">Annuler</button></div>`);
+  const per = W ? (() => { const t = recipeTotals(r), o = {}; for (const x in t) o[x] = t[x] * 100 / W; return o; })() : null;
+  const vals = () => { const n = num($('#np').value) || 0, v = recipePortion(r), o = {}; for (const x in v) o[x] = v[x] * n; return o; };
+  const upd = () => { const v = vals(), n = num($('#np').value) || 0; $('#calc').innerHTML = `<b>${r0(v.kcal)} kcal</b> · P ${r1(v.p)} g · G ${r1(v.c)} g · L ${r1(v.f)} g · Fibres ${r1(v.fib)} g${W ? ` <span class="mute">(${r0(n * W / (r.portions || 1))} g)</span>` : ''}`; };
+  $('#np').oninput = upd; upd();
+  document.querySelectorAll('[data-np]').forEach(b => b.onclick = () => { $('#np').value = b.dataset.np; upd(); });
+  $('#cancel').onclick = closeSheet;
+  $('#edit').onclick = () => { ingDraft = JSON.parse(JSON.stringify(r)); openRecipeEditor(); };
+  $('#ok').onclick = () => {
+    const n = num($('#np').value) || 0; if (!n) return toast('Indique le nombre de portions');
+    const g = W ? n * W / (r.portions || 1) : null;
+    day(cur).entries.push({ id: uid(), name: r.name, meal: $('#meal').value, recipeId: r.id, portions: n, grams: g, per, ...vals() });
+    save(); closeSheet(); toast('Recette ajoutée');
+  };
+}
+function addIngredient(entry) {
+  const { meal, id, ...it } = entry;
+  ingDraft.items.push(it); openRecipeEditor(); toast('Ingrédient ajouté');
+}
+function openRecipeEditor() {
+  const r = ingDraft, t = recipeTotals(r), W = recipeWeight(r), n = Math.max(1, +r.portions || 1);
+  $('#sheetIn').innerHTML = `<div class="grab"></div><h3>${r.isNew ? 'Nouvelle recette' : 'Modifier la recette'}</h3>
+    <label>Nom</label><input id="rName" value="${esc(r.name)}" placeholder="ex. Riz sauté aux légumes">
+    <div class="grid2" style="margin-top:8px"><div><label>Nombre de portions</label><input id="rPort" type="number" step="1" inputmode="numeric" value="${n}"></div>
+      <div><label>Poids cuit total (g, facultatif)</label><input id="rCook" type="number" inputmode="decimal" value="${r.cooked || ''}" placeholder="${W && !r.cooked ? r0(W) + ' (cru)' : ''}"></div></div>
+    ${r.note ? `<p class="mute xs" style="margin:10px 0 0">${esc(r.note)}</p>` : ''}
+    <label style="margin-top:14px">Ingrédients</label>
+    <div id="ings">${r.items.map((it, i) => `<div class="ing"><div><div style="font-weight:600;font-size:14px">${esc(it.name)}</div><div class="mute xs">${r0(itemVals(it).kcal)} kcal</div></div>
+      ${it.per ? `<input type="number" inputmode="decimal" data-ig="${i}" value="${r1(it.grams)}">` : `<span class="mute xs" style="text-align:right">${it.grams ? r0(it.grams) + ' g' : 'fixe'}</span>`}<button class="x" data-ix="${i}">×</button></div>`).join('') || '<p class="mute">Ajoute au moins un ingrédient.</p>'}</div>
+    <div class="tiles t3" style="margin-top:10px"><button class="tile" id="iS">${IC.search}Rechercher</button><button class="tile" id="iB">${IC.scan}Scanner</button><button class="tile" id="iM">${IC.manual}Manuel</button></div>
+    <div class="card" style="margin-top:12px;margin-bottom:0"><b>${r0(t.kcal / n)} kcal / portion</b> · P ${r1(t.p / n)} · G ${r1(t.c / n)} · L ${r1(t.f / n)} · Fibres ${r1(t.fib / n)}<div class="mute xs">Total : ${r0(t.kcal)} kcal${W ? ' · ' + r0(W) + ' g' : ''}</div></div>
+    <div class="row wrap" style="margin-top:12px"><button class="btn pri" id="rSave">Enregistrer</button>${r.isNew ? '' : '<button class="btn danger" id="rDel">Supprimer</button>'}<button class="btn" id="rCancel">Annuler</button></div>`;
+  $('#sheet').classList.add('on');
+  $('#rName').oninput = e => r.name = e.target.value;
+  $('#rPort').onchange = e => { r.portions = Math.max(1, Math.round(num(e.target.value) || 1)); openRecipeEditor(); };
+  $('#rCook').onchange = e => { r.cooked = num(e.target.value) || null; openRecipeEditor(); };
+  document.querySelectorAll('[data-ig]').forEach(el => el.onchange = () => { r.items[+el.dataset.ig].grams = num(el.value) || 0; openRecipeEditor(); });
+  document.querySelectorAll('[data-ix]').forEach(el => el.onclick = () => { r.items.splice(+el.dataset.ix, 1); openRecipeEditor(); });
+  $('#iS').onclick = () => openSearch(); $('#iB').onclick = openScan; $('#iM').onclick = () => openManual();
+  $('#rCancel').onclick = () => { ingDraft = null; openRecipes(); };
+  if ($('#rDel')) $('#rDel').onclick = () => {
+    $('#rDel').outerHTML = '<button class="btn danger" id="rDel2">Confirmer la suppression</button>';
+    $('#rDel2').onclick = () => { S.recipes = S.recipes.filter(x => x.id !== r.id); ingDraft = null; save(); openRecipes(); toast('Recette supprimée'); };
+  };
+  $('#rSave').onclick = () => {
+    r.name = $('#rName').value.trim();
+    if (!r.name) return toast('Donne un nom à la recette');
+    if (!r.items.length) return toast('Ajoute au moins un ingrédient');
+    const { isNew, ...clean } = r;
+    const i = S.recipes.findIndex(x => x.id === r.id);
+    if (i >= 0) S.recipes[i] = clean; else S.recipes.push(clean);
+    S.recipes.sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+    ingDraft = null; save(); openRecipeLog(clean); toast('Recette enregistrée');
   };
 }
 
@@ -857,13 +950,27 @@ async function importMF(file) {
       break;
     }
   }
+  // Recettes MacroFactor : totaux de la recette (le détail des ingrédients n'a pas de quantités dans l'export)
+  let nRc = 0;
+  for (const name of wb.SheetNames.filter(n => /^recipes$|recettes/i.test(n))) {
+    for (const r of XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: null })) {
+      const nm = r['Recipe Name'], k = num(r['Calories (kcal)']); if (!nm || k == null || S.recipes.some(x => x.name === nm)) continue;
+      const tw = num(r['Total Weight (g)']);
+      const vals = { kcal: k, p: num(r['Protein (g)']) || 0, c: num(r['Carbs (g)']) || 0, f: num(r['Fat (g)']) || 0, fib: num(r['Fiber (g)']) || 0 };
+      const ings = String(r['Ingredients'] || '').split('\n').map(x => x.trim()).filter(Boolean);
+      S.recipes.push({ id: uid(), name: nm, portions: Math.max(1, Math.round(num(r['Serving Qty']) || 1)), cooked: null,
+        items: [{ name: 'Total MacroFactor', grams: tw || null, per: tw ? scale(vals, 10000 / tw) : null, ...vals }],
+        note: ings.length ? 'Ingrédients dans MacroFactor : ' + ings.join(', ') : '' });
+      nRc++;
+    }
+  }
   // Aliments perso et favoris (valeurs par portion -> pour 100 g)
   let nF = 0;
   for (const name of wb.SheetNames.filter(n => /custom foods|favorites|aliments/i.test(n))) {
     const data = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: null });
     for (const r of data) {
       const nm = r['Food Name'], g = num(r['Serving Weight (g)']), k = num(r['Calories (kcal)']);
-      if (!nm || !g || k == null || S.foods.some(f => f.name === nm)) continue;
+      if (!nm || !g || k == null || S.foods.some(f => f.name === nm) || S.recipes.some(x => x.name === nm)) continue;
       const per = { kcal: k * 100 / g, p: (num(r['Protein (g)']) || 0) * 100 / g, c: (num(r['Carbs (g)']) || 0) * 100 / g, f: (num(r['Fat (g)']) || 0) * 100 / g, fib: num(r['Fiber (g)']) == null ? null : num(r['Fiber (g)']) * 100 / g };
       S.foods.push({ id: uid(), name: nm, per, serving: g }); nF++;
     }
@@ -886,7 +993,7 @@ async function importMF(file) {
   const firstMF = Object.keys(S.mf).sort().find(k => S.mf[k].exp != null);
   if (firstMF) S.settings.initialTDEE = r0(S.mf[firstMF].exp);
   save(); render();
-  openSheet(`<h3>Import terminé</h3><p>${nX} jours de dépense MacroFactor · ${nR ? nR + ' aliments détaillés · ' : ''}${nE} journées d’apports · ${nW} pesées · ${nF} aliments perso.</p><p class="mute">Feuilles lues : ${esc(found.join(' ; ') || 'aucune colonne « Date » trouvée')}</p><button class="btn pri" id="close">OK</button>`);
+  openSheet(`<h3>Import terminé</h3><p>${nX} jours de dépense MacroFactor · ${nR ? nR + ' aliments détaillés · ' : ''}${nE} journées d’apports · ${nW} pesées · ${nF} aliments perso · ${nRc} recettes.</p><p class="mute">Feuilles lues : ${esc(found.join(' ; ') || 'aucune colonne « Date » trouvée')}</p><button class="btn pri" id="close">OK</button>`);
   $('#close').onclick = closeSheet;
 }
 
