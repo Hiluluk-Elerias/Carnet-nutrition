@@ -33,6 +33,8 @@ nav button.on svg{stroke:var(--acc)}
 .entry.on .ck{background:var(--acc);border-color:var(--acc);color:#fff}
 .entry.on{background:color-mix(in srgb,var(--acc) 7%,transparent);margin:0 -16px;padding-left:16px;padding-right:16px}
 .entry{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.pick{border:0;background:none;padding:0;margin:-6px;padding:6px;cursor:pointer;flex:none;border-radius:14px}
+.pick:active .fi{transform:scale(.92)}
 #selbar{position:fixed;left:0;right:0;bottom:0;z-index:8;background:var(--card);border-top:1px solid var(--line);box-shadow:0 -6px 20px rgba(0,0,0,.08);padding:10px 12px calc(12px + env(safe-area-inset-bottom));display:none}
 #selbar.on{display:block}
 #selbar .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-weight:700}
@@ -533,7 +535,7 @@ function renderJournal() {
     <div class="pill-in sm"><input id="bfIn" type="number" step="0.1" inputmode="decimal" placeholder="—" value="${d && d.bf != null ? d.bf : ''}"><span class="mute">%</span></div></div>${updateCard()}${reminderCard()}<!--FIB-->`;
   const chipsOf = list => { const t2 = { kcal: 0, p: 0, c: 0, f: 0 }; for (const [e] of list) for (const x in t2) t2[x] += +e[x] || 0; return t2; };
   const head = (title, list, menu) => { const tt = chipsOf(list); return `<div class="meal"><div class="meal-h"><span>${title}</span><span class="row" style="gap:10px">${list.length ? `<span class="mh-tot"><b>${r0(tt.kcal)}</b> kcal<span class="chips"><span style="color:var(--p)">${r0(tt.p)}P</span><span style="color:var(--f)">${r0(tt.f)}L</span><span style="color:var(--c)">${r0(tt.c)}G</span></span></span>` : ''}${menu && list.length ? `<button class="mbtn" data-mm="${esc(menu)}" aria-label="Options du repas">⋯</button>` : ''}</span></div><div class="card list">`; };
-  const row = (e, i, sub) => `<div class="entry${selMode && sel.has(e.id) ? ' on' : ''}" data-i="${i}" data-id="${esc(e.id)}"><div class="irow">${selMode ? '<span class="ck">✓</span>' : fi(e.name, !!e.recipeId)}<div><div class="e-name">${esc(e.name)}</div><div class="mute xs">${sub}${e.grams ? r0(e.grams) + ' g' : 'portion'}${e.src === 'photo' ? ' · photo IA' : e.src === 'describe' ? ' · décrit (IA)' : ''}</div></div></div>
+  const row = (e, i, sub) => `<div class="entry${selMode && sel.has(e.id) ? ' on' : ''}" data-i="${i}" data-id="${esc(e.id)}"><div class="irow"><button class="pick" data-pick="${esc(e.id)}" aria-label="Sélectionner">${selMode ? '<span class="ck">✓</span>' : fi(e.name, !!e.recipeId)}</button><div><div class="e-name">${esc(e.name)}</div><div class="mute xs">${sub}${e.grams ? r0(e.grams) + ' g' : 'portion'}${e.src === 'photo' ? ' · photo IA' : e.src === 'describe' ? ' · décrit (IA)' : ''}</div></div></div>
       <div class="e-right"><b>${r0(e.kcal)}</b> <span class="mute xs">kcal</span><div class="chips"><span style="color:var(--p)">${r0(e.p)}P</span><span style="color:var(--f)">${r0(e.f)}L</span><span style="color:var(--c)">${r0(e.c)}G</span></div></div></div>`;
   if (d) for (const e of d.entries) if (!e.id) e.id = uid();
   const all = (d ? d.entries : []).map((e, i) => [e, i]).sort((a, b) => entryTime(a[0]).localeCompare(entryTime(b[0])));
@@ -564,17 +566,11 @@ function renderJournal() {
   $('#bfIn').onchange = e => { const v = num(e.target.value); day(cur).bf = v; save(); toast(v == null ? 'Masse grasse effacée' : 'Masse grasse enregistrée'); render(); };
   if ($('#doUpd')) $('#doUpd').onclick = doUpdate;
   if ($('#goMeas')) $('#goMeas').onclick = () => { tab = 'poids'; cur = today(); render(); setTimeout(() => { const el = document.getElementById('measCard'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }, 50); };
+  const toggle = id => { if (!selMode) { selMode = true; sel = new Set(); } sel.has(id) ? sel.delete(id) : sel.add(id); if (!sel.size) return exitSel(); render(); };
   document.querySelectorAll('.entry').forEach(el => {
-    let tmr = null, x0 = 0, y0 = 0;
-    el.addEventListener('pointerdown', ev => { justLong = false; x0 = ev.clientX; y0 = ev.clientY; clearTimeout(tmr); tmr = setTimeout(() => { justLong = true; if (navigator.vibrate) navigator.vibrate(30); if (!selMode) { selMode = true; sel = new Set(); } sel.add(el.dataset.id); render(); }, 480); });
-    el.addEventListener('pointermove', ev => { if (Math.abs(ev.clientX - x0) + Math.abs(ev.clientY - y0) > 10) clearTimeout(tmr); });
-    ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => el.addEventListener(t, () => clearTimeout(tmr)));
-    el.addEventListener('contextmenu', ev => ev.preventDefault());
-    el.onclick = () => {
-      if (justLong) { justLong = false; return; }
-      if (selMode) { const id = el.dataset.id; sel.has(id) ? sel.delete(id) : sel.add(id); if (!sel.size) return exitSel(); render(); }
-      else openEdit(+el.dataset.i);
-    };
+    // Toucher l'icône : sélection (et entrée en mode sélection) ; toucher le reste : modifier, ou cocher en mode sélection
+    el.querySelector('.pick').onclick = ev => { ev.stopPropagation(); if (navigator.vibrate) navigator.vibrate(15); toggle(el.dataset.id); };
+    el.onclick = () => { if (selMode) toggle(el.dataset.id); else openEdit(+el.dataset.i); };
   });
   if ($('#selStart')) $('#selStart').onclick = () => { selMode = true; sel = new Set(); render(); };
   updSelBar();
