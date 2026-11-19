@@ -122,9 +122,13 @@ textarea{min-height:110px;resize:vertical;font-size:15px}
 /* feuilles */
 .sheet{position:fixed;inset:0;background:rgba(0,0,0,.42);display:none;z-index:20;align-items:flex-end;justify-content:center}
 .sheet.on{display:flex}
-.sheetbox{position:relative;background:var(--card);width:100%;max-width:640px;max-height:92vh;display:flex;flex-direction:column;border-radius:24px 24px 0 0;overflow:hidden;animation:up .22s ease-out}
+.sheetbox{position:relative;background:var(--card);width:100%;max-width:640px;max-height:calc(var(--vvh, 100vh) * .92);display:flex;flex-direction:column;border-radius:24px 24px 0 0;overflow:hidden;animation:up .22s ease-out}
 #sheetIn{overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:8px 18px calc(28px + env(safe-area-inset-bottom))}
-.sheet{overscroll-behavior:contain;touch-action:pan-y}
+.sheet{overscroll-behavior:contain;touch-action:pan-y;padding-bottom:var(--kb, 0px)}
+/* Fenêtre de recherche : pleine hauteur, champ en haut, résultats juste en dessous (donc au-dessus du clavier) */
+.sheetbox.tall{height:calc(var(--vvh, 100vh) * .92)}
+.sheetbox.tall #sheetIn{flex:1}
+.sheetbox.tall #q{position:sticky;top:0;z-index:1}
 body.lock{overflow:hidden;touch-action:none}
 body.lock .sheet{touch-action:auto}
 @keyframes up{from{transform:translateY(30px);opacity:.4}to{transform:none;opacity:1}}
@@ -619,7 +623,8 @@ function openAdd(meal) {
 }
 
 /* ---------- Feuilles (fenêtres du bas) ---------- */
-function openSheet(html) {
+function openSheet(html, opts = {}) {
+  document.querySelector('.sheetbox').classList.toggle('tall', !!opts.tall);
   $('#sheetIn').innerHTML = '<div class="grab"></div>' + (ingDraft ? `<div class="mute xs" style="margin-bottom:6px">Ingrédient pour « ${esc(ingDraft.name || 'nouvelle recette')} »</div>` : '') + html;
   if (ingDraft && $('#meal')) $('#meal').parentElement.style.display = 'none';
   if (ingDraft && $('#tm')) $('#tm').parentElement.style.display = 'none';
@@ -709,7 +714,7 @@ function rankFoods(list, q, max = 30) {
 function openSearch() {
   openSheet(`<h3>Rechercher un aliment</h3>
     <input id="q" type="search" placeholder="ex. banane, skyr, flocons d’avoine…" enterkeyhint="search" autocomplete="off">
-    <div id="res" style="margin-top:8px"></div>`);
+    <div id="res" style="margin-top:8px"></div>`, { tall: true });
   const pool = { base: BASE_FOODS, mine: S.foods, rec: recentFoods(400, 365), off: [], rcp: ingDraft ? [] : S.recipes };
   let shown = {}, offQ = '', timer = null, ctrl = null, seq = 0;
   const show = () => {
@@ -883,7 +888,7 @@ function openRecipeEditor() {
   document.querySelectorAll('[data-ix]').forEach(el => el.onclick = () => { r.items.splice(+el.dataset.ix, 1); openRecipeEditor(); });
   $('#iS').onclick = () => openSearch(); $('#iB').onclick = openScan; $('#iM').onclick = () => openManual(); $('#iT').onclick = openRecipeImport;
   $('#rCancel').onclick = () => { ingDraft = null; openRecipes(); };
-  sheetMode = 'editor'; document.body.classList.add('lock');
+  sheetMode = 'editor'; document.body.classList.add('lock'); document.querySelector('.sheetbox').classList.remove('tall');
   if ($('#rDel')) $('#rDel').onclick = () => {
     $('#rDel').outerHTML = '<button class="btn danger" id="rDel2">Confirmer la suppression</button>';
     $('#rDel2').onclick = () => { S.recipes = S.recipes.filter(x => x.id !== r.id); ingDraft = null; save(); openRecipes(); toast('Recette supprimée'); };
@@ -1610,6 +1615,13 @@ function bindSettings() {
 /* ===================== Démarrage ===================== */
 if (typeof document !== 'undefined' && document.getElementById('main')) {
   document.querySelectorAll('nav button').forEach(b => b.onclick = () => { tab = b.dataset.tab; render(); window.scrollTo(0, 0); });
+  // Clavier du téléphone : on remonte les fenêtres au-dessus et on limite leur hauteur à la zone visible
+  const vv = window.visualViewport;
+  const onVV = () => {
+    const h = vv ? vv.height : window.innerHeight, kb = vv ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0;
+    document.documentElement.style.setProperty('--vvh', h + 'px'); document.documentElement.style.setProperty('--kb', kb + 'px');
+  };
+  if (vv) { vv.addEventListener('resize', onVV); vv.addEventListener('scroll', onVV); } window.addEventListener('resize', onVV); onVV();
   $('#todayBtn').onclick = () => { if (selMode) exitSel(false); cur = today(); render(); };
   $('#selCancel').onclick = () => exitSel();
   $('#selAll').onclick = () => { const es = (S.days[cur] && S.days[cur].entries) || []; sel = sel.size === es.length ? new Set() : new Set(es.map(e => e.id)); render(); };
