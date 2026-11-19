@@ -465,7 +465,7 @@ function renderJournal() {
   </div>
   <div class="card wcard2"><div><div style="font-weight:700">Poids du matin</div><div class="mute xs">${(() => { const tt = displayTrend(), tr = tt.length ? tt[tt.length - 1] : null; return tr != null ? 'Tendance ' + r1(tr) + ' kg' : 'Pèse-toi au réveil'; })()}</div></div>
     <div class="pill-in sm"><input id="wIn" type="number" step="0.1" inputmode="decimal" placeholder="—" value="${d && d.weight != null ? d.weight : ''}"><span class="mute">kg</span></div>
-    <div class="pill-in sm"><input id="bfIn" type="number" step="0.1" inputmode="decimal" placeholder="—" value="${d && d.bf != null ? d.bf : ''}"><span class="mute">%</span></div></div>${reminderCard()}<!--FIB-->`;
+    <div class="pill-in sm"><input id="bfIn" type="number" step="0.1" inputmode="decimal" placeholder="—" value="${d && d.bf != null ? d.bf : ''}"><span class="mute">%</span></div></div>${updateCard()}${reminderCard()}<!--FIB-->`;
   const groups = {}; (d ? d.entries : []).forEach((e, i) => { (groups[e.meal] = groups[e.meal] || []).push([e, i]); });
   const names = [...MEALS, ...Object.keys(groups).filter(m => !MEALS.includes(m))];
   for (const m of names) {
@@ -486,6 +486,7 @@ function renderJournal() {
   document.querySelectorAll('[data-fib]').forEach(el => el.onclick = () => openQty(FIB_IDEAS[+el.dataset.fib]));
   $('#wIn').onchange = e => { const v = num(e.target.value); day(cur).weight = v; save(); toast(v == null ? 'Pesée effacée' : 'Poids enregistré'); render(); };
   $('#bfIn').onchange = e => { const v = num(e.target.value); day(cur).bf = v; save(); toast(v == null ? 'Masse grasse effacée' : 'Masse grasse enregistrée'); render(); };
+  if ($('#doUpd')) $('#doUpd').onclick = doUpdate;
   if ($('#goMeas')) $('#goMeas').onclick = () => { tab = 'poids'; cur = today(); render(); setTimeout(() => { const el = document.getElementById('measCard'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }, 50); };
   document.querySelectorAll('.entry').forEach(el => el.onclick = () => openEdit(+el.dataset.i));
   document.querySelectorAll('[data-meal]').forEach(b => b.onclick = () => openAdd(b.dataset.meal));
@@ -1003,6 +1004,38 @@ function renderPoids() {
   bindRange(); bindWeek();
 }
 
+/* ---------- Mise à jour de l'appli Android ----------
+   Le contenu de l'appli se met à jour tout seul (GitHub Pages). Seule la coque APK demande, rarement, une réinstallation :
+   on compare son numéro de version à la dernière release « android » du dépôt public. */
+const APP_REPO = 'Hiluluk-Elerias/Carnet-nutrition';
+let UPD = { installed: null, name: '', latest: null, url: null, checked: false };
+async function checkUpdate(force = false) {
+  if (!NATIVE) return;
+  try { const A = (window.Capacitor.Plugins && window.Capacitor.Plugins.App) || window.Capacitor.registerPlugin('App'); const info = await A.getInfo(); UPD.installed = parseInt(info.build, 10) || null; UPD.name = info.version || ''; } catch (e) {}
+  const c = lsj('carnet-nutrition-upd', null);
+  if (!force && c && Date.now() - c.t < 6 * 3600e3) { UPD.latest = c.latest; UPD.url = c.url; }
+  else {
+    try {
+      const r = await fetch(`https://api.github.com/repos/${APP_REPO}/releases/tags/android`, { cache: 'no-store' });
+      if (r.ok) {
+        const j = await r.json(), m = String(j.name || '').match(/1\.(\d+)/), a = (j.assets || []).find(x => /\.apk$/.test(x.name));
+        UPD.latest = m ? +m[1] : null; UPD.url = a ? a.browser_download_url : null;
+        try { localStorage.setItem('carnet-nutrition-upd', JSON.stringify({ t: Date.now(), latest: UPD.latest, url: UPD.url })); } catch (e) {}
+      }
+    } catch (e) {}
+  }
+  UPD.checked = true;
+  if (updAvailable() || tab === 'reglages') render();
+}
+const updAvailable = () => NATIVE && UPD.installed && UPD.latest && UPD.latest > UPD.installed && UPD.url;
+function doUpdate() { if (UPD.url) window.location.href = UPD.url; }  // ouvert par Android dans le navigateur, qui télécharge l'APK
+function updateCard() {
+  if (!updAvailable()) return '';
+  return `<div class="card remind"><div style="font-weight:700">Nouvelle version de l’appli (1.${UPD.latest})</div>
+    <div class="mute xs" style="margin:2px 0 8px">Touche « Mettre à jour », puis « Ouvrir » et « Installer » quand Android le propose. Tes données ne bougent pas.</div>
+    <button class="btn pri sm" id="doUpd">Mettre à jour</button></div>`;
+}
+
 /* ---------- Rappel des mensurations ---------- */
 function reminderDue() {
   const md = +S.settings.measDay; if (md < 0 || cur !== today()) return false;
@@ -1228,6 +1261,9 @@ function renderReglages() {
     <div class="grid2"><div><label>Compte</label><input data-cfg="owner" value="${esc(CFG.owner)}" autocapitalize="off"></div><div><label>Dépôt</label><input data-cfg="repo" value="${esc(CFG.repo)}" autocapitalize="off"></div></div>
     <label style="margin-top:8px">Jeton (fine-grained, Contents : lecture et écriture)</label><input type="password" data-cfg="token" value="${esc(CFG.token)}" placeholder="github_pat_…" autocomplete="off">
     <div class="row wrap" style="margin-top:10px"><button class="btn pri" id="syncNow">Synchroniser</button><span class="mute" id="syncInfo">${esc(META.status || (CFG.token ? '' : 'Sur cet appareil seulement'))}</span></div></div>
+  ${NATIVE ? `<div class="card"><h2>Appli Android</h2><p class="mute" style="margin-top:0">Version installée : ${UPD.installed ? '1.' + UPD.installed : esc(UPD.name || '?')}${UPD.latest ? ' · dernière publiée : 1.' + UPD.latest : ''}</p>
+    <div class="row wrap">${updAvailable() ? '<button class="btn pri" id="doUpd2">Mettre à jour</button>' : ''}<button class="btn" id="chkUpd">Vérifier les mises à jour</button></div>
+    <p class="mute xs" style="margin-bottom:0">Les améliorations de l’appli arrivent toutes seules. Une réinstallation n’est demandée que pour les changements de la partie Android.</p></div>` : ''}
   <div class="card"><h2>Rappel des mensurations</h2>
     <div class="grid2"><div><label>Jour</label><select data-k="measDay"><option value="-1" ${s.measDay < 0 ? 'selected' : ''}>Désactivé</option><option value="6" ${s.measDay == 6 ? 'selected' : ''}>Samedi</option><option value="0" ${s.measDay == 0 ? 'selected' : ''}>Dimanche</option></select></div>
     <div><label>Heure</label><input type="time" data-k="measTime" data-str value="${esc(s.measTime || '09:00')}"></div></div>
@@ -1248,6 +1284,8 @@ function renderReglages() {
     CFG[k] = v; saveCfg(); sync();
   });
   $('#syncNow').onclick = () => sync();
+  if ($('#doUpd2')) $('#doUpd2').onclick = doUpdate;
+  if ($('#chkUpd')) $('#chkUpd').onclick = () => { toast('Vérification…'); checkUpdate(true).then(() => toast(updAvailable() ? 'Une mise à jour est disponible' : 'L’appli est à jour')); };
   if ($('#exp')) $('#exp').onclick = () => {
     const blob = new Blob([JSON.stringify(S)], { type: 'application/json' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `carnet-nutrition-${today()}.json`; a.click();
@@ -1284,6 +1322,7 @@ if (typeof document !== 'undefined' && document.getElementById('main')) {
   if (CFG.token) sync();
   if (NATIVE) {
     scheduleReminder(true);
+    checkUpdate();
     try { const ln = nativeLN(); ln && ln.addListener && ln.addListener('localNotificationActionPerformed', a => { if (a && a.notification && a.notification.id === 7) { tab = 'poids'; cur = today(); render(); } }); } catch (e) {}
   }
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') scheduleSync(300); });
