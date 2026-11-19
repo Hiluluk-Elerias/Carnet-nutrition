@@ -380,6 +380,8 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 const $ = q => document.querySelector(q);
 const day = k => S.days[k] || (S.days[k] = { entries: [], weight: null });
 const hasIntake = k => !!(S.days[k] && S.days[k].entries.length);
+// Fibres inconnues : produit sans valeur de fibres (souvent Open Food Facts). Comptées 0 dans le total, mais signalées.
+const fibUnknown = e => !!(e && ((e.per && e.per.fib == null) || e.fibUnknown));
 function totals(k) {
   const t = { kcal: 0, p: 0, c: 0, f: 0, fib: 0 };
   const d = S.days[k]; if (d) for (const e of d.entries) for (const x in t) t[x] += +e[x] || 0;
@@ -525,7 +527,8 @@ function ring(v, max, color, size, sw) {
 }
 function renderJournal() {
   const t = totals(cur), T = targets(), d = S.days[cur], left = T.kcal - t.kcal;
-  const mac = (lbl, v, max, col) => `<div class="mac"><div class="ring-s">${ring(v, max, col, 60, 6)}<div class="ring-in"><b>${r0(v)}</b></div></div><div class="mac-l">${lbl}</div><div class="mute xs">/ ${r0(max)} g</div></div>`;
+  const nUnk = d ? d.entries.filter(fibUnknown).length : 0;
+  const mac = (lbl, v, max, col) => `<div class="mac"><div class="ring-s">${ring(v, max, col, 60, 6)}<div class="ring-in"><b>${r0(v)}${lbl === 'Fibres' && nUnk ? '<span style="color:var(--fib)">?</span>' : ''}</b></div></div><div class="mac-l">${lbl}</div><div class="mute xs">/ ${r0(max)} g</div></div>`;
   // Même jauge, mais le chiffre au centre indique ce qu'il reste (en rouge avec un + si l'objectif est dépassé)
   const macR = (lbl, v, max, col) => { const left = max - v; return `<div class="mac"><div class="ring-s">${ring(v, max, col, 60, 6)}<div class="ring-in"><b style="${left < 0 ? 'color:var(--danger)' : ''}">${left < 0 ? '+' + r0(-left) : r0(left)}</b></div></div><div class="mac-l">${lbl}</div><div class="mute xs">${left < 0 ? 'en trop' : 'restants'}</div></div>`; };
   let h = weekStrip() + `<div class="card">
@@ -540,14 +543,14 @@ function renderJournal() {
     <div class="macwrap"><div class="macpager" id="macpager">
       <div class="macs">${mac('Protéines', t.p, T.p, 'var(--p)')}${mac('Lipides', t.f, T.f, 'var(--f)')}${mac('Glucides', t.c, T.c, 'var(--c)')}${mac('Fibres', t.fib, T.fib, 'var(--fib)')}</div>
       <div class="macs">${macR('Protéines', t.p, T.p, 'var(--p)')}${macR('Lipides', t.f, T.f, 'var(--f)')}${macR('Glucides', t.c, T.c, 'var(--c)')}${macR('Fibres', t.fib, T.fib, 'var(--fib)')}</div>
-    </div><div class="mdots"><button data-mp="0" class="${macPage === 0 ? 'on' : ''}">Consommé</button><button data-mp="1" class="${macPage === 1 ? 'on' : ''}">Restant</button></div></div>
+    </div>${nUnk ? `<div class="mute xs" style="text-align:center;margin-top:6px">Fibres inconnues pour ${nUnk} aliment${nUnk > 1 ? 's' : ''} (marqué${nUnk > 1 ? 's' : ''} « fibres ? ») : touche-le pour les compléter</div>` : ''}<div class="mdots"><button data-mp="0" class="${macPage === 0 ? 'on' : ''}">Consommé</button><button data-mp="1" class="${macPage === 1 ? 'on' : ''}">Restant</button></div></div>
   </div>
   <div class="card wcard2"><div><div style="font-weight:700">Poids du matin</div><div class="mute xs">${(() => { const tt = displayTrend(), tr = tt.length ? tt[tt.length - 1] : null; return tr != null ? 'Tendance ' + r1(tr) + ' kg' : 'Pèse-toi au réveil'; })()}</div></div>
     <div class="pill-in sm"><input id="wIn" type="number" step="0.1" inputmode="decimal" placeholder="—" value="${d && d.weight != null ? d.weight : ''}"><span class="mute">kg</span></div>
     <div class="pill-in sm"><input id="bfIn" type="number" step="0.1" inputmode="decimal" placeholder="—" value="${d && d.bf != null ? d.bf : ''}"><span class="mute">%</span></div></div>${updateCard()}${reminderCard()}<!--FIB-->`;
   const chipsOf = list => { const t2 = { kcal: 0, p: 0, c: 0, f: 0 }; for (const [e] of list) for (const x in t2) t2[x] += +e[x] || 0; return t2; };
   const head = (title, list, menu) => { const tt = chipsOf(list); return `<div class="meal"><div class="meal-h"><span>${title}</span><span class="row" style="gap:10px">${list.length ? `<span class="mh-tot"><b>${r0(tt.kcal)}</b> kcal<span class="chips"><span style="color:var(--p)">${r0(tt.p)}P</span><span style="color:var(--f)">${r0(tt.f)}L</span><span style="color:var(--c)">${r0(tt.c)}G</span></span></span>` : ''}${menu && list.length ? `<button class="mbtn" data-mm="${esc(menu)}" aria-label="Options du repas">⋯</button>` : ''}</span></div><div class="card list">`; };
-  const row = (e, i, sub) => `<div class="entry${selMode && sel.has(e.id) ? ' on' : ''}" data-i="${i}" data-id="${esc(e.id)}"><div class="irow"><button class="pick" data-pick="${esc(e.id)}" aria-label="Sélectionner">${selMode ? '<span class="ck">✓</span>' : fi(e.name, !!e.recipeId)}</button><div><div class="e-name">${esc(e.name)}</div><div class="mute xs">${sub}${e.grams ? r0(e.grams) + ' g' : 'portion'}${e.src === 'photo' ? ' · photo IA' : e.src === 'describe' ? ' · décrit (IA)' : ''}</div></div></div>
+  const row = (e, i, sub) => `<div class="entry${selMode && sel.has(e.id) ? ' on' : ''}" data-i="${i}" data-id="${esc(e.id)}"><div class="irow"><button class="pick" data-pick="${esc(e.id)}" aria-label="Sélectionner">${selMode ? '<span class="ck">✓</span>' : fi(e.name, !!e.recipeId)}</button><div><div class="e-name">${esc(e.name)}</div> <div class="mute xs">${sub}${fibUnknown(e) ? '<span style="color:var(--fib);font-weight:600">fibres ? · </span>' : ''}${e.grams ? r0(e.grams) + ' g' : 'portion'}${e.src === 'photo' ? ' · photo IA' : e.src === 'describe' ? ' · décrit (IA)' : ''}</div></div></div>
       <div class="e-right"><b>${r0(e.kcal)}</b> <span class="mute xs">kcal</span><div class="chips"><span style="color:var(--p)">${r0(e.p)}P</span><span style="color:var(--f)">${r0(e.f)}L</span><span style="color:var(--c)">${r0(e.c)}G</span></div></div></div>`;
   if (d) for (const e of d.entries) if (!e.id) e.id = uid();
   const all = (d ? d.entries : []).map((e, i) => [e, i]).sort((a, b) => entryTime(a[0]).localeCompare(entryTime(b[0])));
@@ -751,6 +754,9 @@ function openQty(food, editIndex) {
   const isMine = S.foods.some(f => f.name === food.name);
   openSheet(`<h3>${esc(food.name)}</h3>
     <div class="mute">Pour 100 g : ${r0(food.per.kcal)} kcal · P ${r1(food.per.p)} · G ${r1(food.per.c)} · L ${r1(food.per.f)} · Fibres ${food.per.fib == null ? '?' : r1(food.per.fib)}</div>
+    ${food.per.fib == null ? `<div class="card" style="margin:10px 0 0;padding:10px 12px;border-left:4px solid var(--fib)"><label style="color:var(--ink);font-weight:600">Fibres non renseignées pour ce produit</label>
+      <div class="row"><input id="fibIn" type="number" step="0.1" inputmode="decimal" placeholder="voir l’étiquette"><span class="mute xs" style="white-space:nowrap">g / 100 g</span></div>
+      <div class="mute xs" style="margin-top:4px">Sinon elles comptent pour 0 dans ta journée. Bonbons, sodas, viande, poisson, œufs, lait : 0.</div></div>` : ''}
     <div class="grid2" style="margin:10px 0"><div><label>Quantité (g)</label><input id="g" type="number" inputmode="decimal" value="${r1(g0)}"></div><div><label>Repas</label>${mealSelect(e ? e.meal : null)}</div></div>
     <div class="grid2" style="margin:-2px 0 10px">${timeInput(e ? entryTime(e) : defaultTime(pendingMeal || MEALS[defaultMeal()]))}${food.piece ? `<div><label>Nombre (${esc(food.unit || 'pièce')}${/s$/.test(food.unit || '') || /^c\. à/.test(food.unit || '') ? '' : 's'})</label><input id="cnt" type="number" step="1" inputmode="decimal" value="${r1(g0 / food.piece)}"></div>` : '<div></div>'}</div>
     ${food.piece ? `<div class="row wrap" style="margin-bottom:8px">${(food.piece < 15 ? [1, 5, 10, 20] : [1, 2, 3]).map(n => `<button class="btn sm" data-g="${r1(food.piece * n)}">${n} ${esc(food.unit || 'pièce')}${n > 1 && !/s$/.test(food.unit || '') && !/^c\. à/.test(food.unit || '') ? 's' : ''} (${food.piece * n < 10 ? r1(food.piece * n) : r0(food.piece * n)} g)</button>`).join('')}<button class="btn sm" data-g="100">100 g</button></div>` : ''}
@@ -758,7 +764,9 @@ function openQty(food, editIndex) {
     <div id="calc" class="card"></div>
     ${isMine ? '' : `<label class="row" style="color:var(--ink);font-size:14px"><input type="checkbox" id="keep"> Ajouter à mes aliments</label>`}
     <div class="row" style="margin-top:10px"><button class="btn pri" id="ok">${e ? 'Enregistrer' : 'Ajouter'}</button>${e ? '<button class="btn danger" id="del">Supprimer</button>' : ''}<button class="btn" id="cancel">Annuler</button></div>`);
-  const upd = () => { const v = scale(food.per, num($('#g').value) || 0); $('#calc').innerHTML = `<b>${r0(v.kcal)} kcal</b> · P ${r1(v.p)} g · G ${r1(v.c)} g · L ${r1(v.f)} g · Fibres ${r1(v.fib)} g`; };
+  const perNow = () => { const fv = $('#fibIn') ? num($('#fibIn').value) : null; return fv != null ? { ...food.per, fib: fv } : food.per; };
+  if ($('#fibIn')) $('#fibIn').oninput = () => upd();
+  const upd = () => { const v = scale(perNow(), num($('#g').value) || 0); $('#calc').innerHTML = `<b>${r0(v.kcal)} kcal</b> · P ${r1(v.p)} g · G ${r1(v.c)} g · L ${r1(v.f)} g · Fibres ${r1(v.fib)} g`; };
   const syncCnt = () => { if ($('#cnt')) $('#cnt').value = r1((num($('#g').value) || 0) / food.piece); };
   $('#g').oninput = () => { syncCnt(); upd(); }; upd();
   if ($('#cnt')) $('#cnt').oninput = () => { $('#g').value = r1((num($('#cnt').value) || 0) * food.piece); upd(); };
@@ -767,10 +775,12 @@ function openQty(food, editIndex) {
   if (e) $('#del').onclick = () => { S.days[cur].entries.splice(editIndex, 1); save(); closeSheet(); };
   $('#ok').onclick = () => {
     const g = num($('#g').value) || 0;
-    const entry = { id: e ? e.id : uid(), name: food.name, code: food.code, meal: $('#meal').value, time: pickTime($('#meal').value), grams: g, per: food.per, ...(food.piece ? { piece: food.piece, unit: food.unit } : {}), ...scale(food.per, g) };
+    const entry = { id: e ? e.id : uid(), name: food.name, code: food.code, meal: $('#meal').value, time: pickTime($('#meal').value), grams: g, per: perNow(), ...(food.piece ? { piece: food.piece, unit: food.unit } : {}), ...scale(perNow(), g) };
+    // Fibres complétées : on les retient aussi dans « Mes aliments » si le produit y est
+    if ($('#fibIn') && num($('#fibIn').value) != null) { const mf = S.foods.find(f => f.name === food.name || (food.code && f.code === food.code)); if (mf) mf.per = { ...mf.per, fib: num($('#fibIn').value) }; }
     if (ingDraft && !e) { if ($('#keep') && $('#keep').checked) S.foods.push({ id: uid(), name: food.name, code: food.code, per: food.per, serving: food.serving || g }); return addIngredient(entry); }
     if (e) S.days[cur].entries[editIndex] = entry; else day(cur).entries.push(entry);
-    if ($('#keep') && $('#keep').checked) S.foods.push({ id: uid(), name: food.name, code: food.code, per: food.per, serving: food.serving || g });
+    if ($('#keep') && $('#keep').checked) S.foods.push({ id: uid(), name: food.name, code: food.code, per: perNow(), serving: food.serving || g });
     save(); closeSheet(); toast(e ? 'Modifié' : 'Ajouté');
   };
 }
