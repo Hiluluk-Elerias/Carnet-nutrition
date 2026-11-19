@@ -608,7 +608,7 @@ function mealSelect(sel) { return `<select id="meal">${[...MEALS].map((m, i) => 
 function recentFoods(limit = 20, daysBack = 45) {
   const seen = new Map();
   const ks = Object.keys(S.days).sort().reverse().slice(0, daysBack);
-  for (const k of ks) for (const e of S.days[k].entries) if (e.per && !seen.has(e.name)) seen.set(e.name, { name: e.name, per: e.per, serving: e.grams, code: e.code });
+  for (const k of ks) for (const e of S.days[k].entries) if (e.per && !seen.has(e.name)) seen.set(e.name, { name: e.name, per: e.per, serving: e.grams, code: e.code, piece: e.piece, unit: e.unit });
   return [...seen.values()].slice(0, limit);
 }
 function foodItem(f, i, src) { return `<div class="it irow" data-src="${src}" data-i="${i}">${fi(f.name)}<div><div style="font-weight:600;font-size:14.5px">${esc(f.name)}</div><div class="mute">${r0(f.per.kcal)} kcal · P ${r1(f.per.p)} · G ${r1(f.per.c)} · L ${r1(f.per.f)} / 100 g</div></div></div>`; }
@@ -729,20 +729,22 @@ function openQty(food, editIndex) {
   openSheet(`<h3>${esc(food.name)}</h3>
     <div class="mute">Pour 100 g : ${r0(food.per.kcal)} kcal · P ${r1(food.per.p)} · G ${r1(food.per.c)} · L ${r1(food.per.f)} · Fibres ${food.per.fib == null ? '?' : r1(food.per.fib)}</div>
     <div class="grid2" style="margin:10px 0"><div><label>Quantité (g)</label><input id="g" type="number" inputmode="decimal" value="${r1(g0)}"></div><div><label>Repas</label>${mealSelect(e ? e.meal : null)}</div></div>
-    <div class="grid2" style="margin:-2px 0 10px">${timeInput(e ? entryTime(e) : defaultTime(pendingMeal || MEALS[defaultMeal()]))}<div></div></div>
+    <div class="grid2" style="margin:-2px 0 10px">${timeInput(e ? entryTime(e) : defaultTime(pendingMeal || MEALS[defaultMeal()]))}${food.piece ? `<div><label>Nombre (${esc(food.unit || 'pièce')}${/s$/.test(food.unit || '') || /^c\. à/.test(food.unit || '') ? '' : 's'})</label><input id="cnt" type="number" step="1" inputmode="decimal" value="${r1(g0 / food.piece)}"></div>` : '<div></div>'}</div>
     ${food.piece ? `<div class="row wrap" style="margin-bottom:8px">${(food.piece < 15 ? [1, 5, 10, 20] : [1, 2, 3]).map(n => `<button class="btn sm" data-g="${r1(food.piece * n)}">${n} ${esc(food.unit || 'pièce')}${n > 1 && !/s$/.test(food.unit || '') && !/^c\. à/.test(food.unit || '') ? 's' : ''} (${food.piece * n < 10 ? r1(food.piece * n) : r0(food.piece * n)} g)</button>`).join('')}<button class="btn sm" data-g="100">100 g</button></div>` : ''}
     ${food.serving && !food.piece ? `<div class="row wrap" style="margin-bottom:8px"><button class="btn sm" data-g="${food.serving}">1 portion (${r0(food.serving)} g)</button><button class="btn sm" data-g="${food.serving * 2}">2 portions</button><button class="btn sm" data-g="100">100 g</button></div>` : ''}
     <div id="calc" class="card"></div>
     ${isMine ? '' : `<label class="row" style="color:var(--ink);font-size:14px"><input type="checkbox" id="keep"> Ajouter à mes aliments</label>`}
     <div class="row" style="margin-top:10px"><button class="btn pri" id="ok">${e ? 'Enregistrer' : 'Ajouter'}</button>${e ? '<button class="btn danger" id="del">Supprimer</button>' : ''}<button class="btn" id="cancel">Annuler</button></div>`);
   const upd = () => { const v = scale(food.per, num($('#g').value) || 0); $('#calc').innerHTML = `<b>${r0(v.kcal)} kcal</b> · P ${r1(v.p)} g · G ${r1(v.c)} g · L ${r1(v.f)} g · Fibres ${r1(v.fib)} g`; };
-  $('#g').oninput = upd; upd();
-  document.querySelectorAll('[data-g]').forEach(b => b.onclick = () => { $('#g').value = r1(b.dataset.g); upd(); });
+  const syncCnt = () => { if ($('#cnt')) $('#cnt').value = r1((num($('#g').value) || 0) / food.piece); };
+  $('#g').oninput = () => { syncCnt(); upd(); }; upd();
+  if ($('#cnt')) $('#cnt').oninput = () => { $('#g').value = r1((num($('#cnt').value) || 0) * food.piece); upd(); };
+  document.querySelectorAll('[data-g]').forEach(b => b.onclick = () => { $('#g').value = r1(b.dataset.g); syncCnt(); upd(); });
   $('#cancel').onclick = closeSheet;
   if (e) $('#del').onclick = () => { S.days[cur].entries.splice(editIndex, 1); save(); closeSheet(); };
   $('#ok').onclick = () => {
     const g = num($('#g').value) || 0;
-    const entry = { id: e ? e.id : uid(), name: food.name, code: food.code, meal: $('#meal').value, time: pickTime($('#meal').value), grams: g, per: food.per, ...scale(food.per, g) };
+    const entry = { id: e ? e.id : uid(), name: food.name, code: food.code, meal: $('#meal').value, time: pickTime($('#meal').value), grams: g, per: food.per, ...(food.piece ? { piece: food.piece, unit: food.unit } : {}), ...scale(food.per, g) };
     if (ingDraft && !e) { if ($('#keep') && $('#keep').checked) S.foods.push({ id: uid(), name: food.name, code: food.code, per: food.per, serving: food.serving || g }); return addIngredient(entry); }
     if (e) S.days[cur].entries[editIndex] = entry; else day(cur).entries.push(entry);
     if ($('#keep') && $('#keep').checked) S.foods.push({ id: uid(), name: food.name, code: food.code, per: food.per, serving: food.serving || g });
@@ -752,7 +754,7 @@ function openQty(food, editIndex) {
 
 function openEdit(i) {
   const e = S.days[cur].entries[i];
-  if (e.per) return openQty({ name: e.name, code: e.code, per: e.per, serving: null }, i);
+  if (e.per) return openQty({ name: e.name, code: e.code, per: e.per, serving: null, piece: e.piece, unit: e.unit }, i);
   openManual(e, i);
 }
 
