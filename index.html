@@ -98,11 +98,14 @@ textarea{min-height:110px;resize:vertical;font-size:15px}
 /* feuilles */
 .sheet{position:fixed;inset:0;background:rgba(0,0,0,.42);display:none;z-index:20;align-items:flex-end;justify-content:center}
 .sheet.on{display:flex}
-.sheet>div{background:var(--card);width:100%;max-width:640px;max-height:92vh;overflow:auto;border-radius:24px 24px 0 0;padding:8px 18px 28px;animation:up .22s ease-out}
+.sheetbox{position:relative;background:var(--card);width:100%;max-width:640px;max-height:92vh;display:flex;flex-direction:column;border-radius:24px 24px 0 0;overflow:hidden;animation:up .22s ease-out}
+#sheetIn{overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:8px 18px calc(28px + env(safe-area-inset-bottom))}
+.sheet{overscroll-behavior:contain;touch-action:pan-y}
+body.lock{overflow:hidden;touch-action:none}
+body.lock .sheet{touch-action:auto}
 @keyframes up{from{transform:translateY(30px);opacity:.4}to{transform:none;opacity:1}}
 .grab{width:40px;height:5px;border-radius:3px;background:var(--line);margin:4px auto 12px}
 .sheet h3{margin:2px 0 12px;font-size:20px;font-weight:800;letter-spacing:-.01em;padding-right:44px}
-.sheet>div{position:relative}
 .sx{position:absolute;top:14px;right:14px;width:36px;height:36px;border-radius:50%;border:0;background:var(--card2);color:var(--ink);font-size:22px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:2}
 .fi{width:36px;height:36px;flex:none;border-radius:11px;background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:19px;line-height:1}
 .irow{display:flex;align-items:center;gap:12px;min-width:0}
@@ -143,7 +146,7 @@ tr:last-child td{border-bottom:0}
   <button data-tab="reglages"></button>
 </nav>
 <button id="fab" aria-label="Ajouter"></button>
-<div class="sheet" id="sheet"><div id="sheetIn"></div></div>
+<div class="sheet" id="sheet"><div class="sheetbox"><button class="sx" id="sx" aria-label="Fermer">×</button><div id="sheetIn"></div></div></div>
 <div class="toast" id="toast"></div>
 <input type="file" id="fileJson" accept="application/json,.json" hidden>
 <input type="file" id="fileMF" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv,application/octet-stream" hidden>
@@ -543,12 +546,13 @@ function openAdd(meal) {
 
 /* ---------- Feuilles (fenêtres du bas) ---------- */
 function openSheet(html) {
-  $('#sheetIn').innerHTML = '<div class="grab"></div><button class="sx" id="sx" aria-label="Fermer">×</button>' + (ingDraft ? `<div class="mute xs" style="margin-bottom:6px">Ingrédient pour « ${esc(ingDraft.name || 'nouvelle recette')} »</div>` : '') + html;
+  $('#sheetIn').innerHTML = '<div class="grab"></div>' + (ingDraft ? `<div class="mute xs" style="margin-bottom:6px">Ingrédient pour « ${esc(ingDraft.name || 'nouvelle recette')} »</div>` : '') + html;
   if (ingDraft && $('#meal')) $('#meal').parentElement.style.display = 'none';
-  $('#sx').onclick = closeSheet;
-  $('#sheet').classList.add('on'); $('#sheetIn').scrollTop = 0;
+  sheetMode = 'sheet';
+  $('#sheet').classList.add('on'); document.body.classList.add('lock'); $('#sheetIn').scrollTop = 0;
 }
-function closeSheet() { stopCam(); if (ingDraft) return openRecipeEditor(); pendingMeal = null; $('#sheet').classList.remove('on'); render(); }
+let sheetMode = 'sheet';
+function closeSheet() { stopCam(); if (ingDraft) return openRecipeEditor(); pendingMeal = null; $('#sheet').classList.remove('on'); document.body.classList.remove('lock'); render(); }
 function stopCam() { scanning = false; if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; } }
 function mealSelect(sel) { return `<select id="meal">${[...MEALS].map((m, i) => `<option value="${esc(m)}" ${(sel == null ? (pendingMeal ? m === pendingMeal : i === defaultMeal()) : sel === m) ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select>`; }
 
@@ -706,7 +710,7 @@ function addIngredient(entry) {
 }
 function openRecipeEditor() {
   const r = ingDraft, t = recipeTotals(r), W = recipeWeight(r), n = Math.max(1, +r.portions || 1);
-  $('#sheetIn').innerHTML = `<div class="grab"></div><button class="sx" id="sx" aria-label="Fermer">×</button><h3>${r.isNew ? 'Nouvelle recette' : 'Modifier la recette'}</h3>
+  $('#sheetIn').innerHTML = `<div class="grab"></div><h3>${r.isNew ? 'Nouvelle recette' : 'Modifier la recette'}</h3>
     <label>Nom</label><input id="rName" value="${esc(r.name)}" placeholder="ex. Riz sauté aux légumes">
     <div class="grid2" style="margin-top:8px"><div><label>Nombre de portions</label><input id="rPort" type="number" step="1" inputmode="numeric" value="${n}"></div>
       <div><label>Poids cuit total (g, facultatif)</label><input id="rCook" type="number" inputmode="decimal" value="${r.cooked || ''}" placeholder="${W && !r.cooked ? r0(W) + ' (cru)' : ''}"></div></div>
@@ -725,7 +729,7 @@ function openRecipeEditor() {
   document.querySelectorAll('[data-ix]').forEach(el => el.onclick = () => { r.items.splice(+el.dataset.ix, 1); openRecipeEditor(); });
   $('#iS').onclick = () => openSearch(); $('#iB').onclick = openScan; $('#iM').onclick = () => openManual(); $('#iT').onclick = openRecipeImport;
   $('#rCancel').onclick = () => { ingDraft = null; openRecipes(); };
-  $('#sx').onclick = () => { ingDraft = null; closeSheet(); };
+  sheetMode = 'editor'; document.body.classList.add('lock');
   if ($('#rDel')) $('#rDel').onclick = () => {
     $('#rDel').outerHTML = '<button class="btn danger" id="rDel2">Confirmer la suppression</button>';
     $('#rDel2').onclick = () => { S.recipes = S.recipes.filter(x => x.id !== r.id); ingDraft = null; save(); openRecipes(); toast('Recette supprimée'); };
@@ -1345,7 +1349,8 @@ if (typeof document !== 'undefined' && document.getElementById('main')) {
   document.querySelectorAll('nav button').forEach(b => b.onclick = () => { tab = b.dataset.tab; render(); window.scrollTo(0, 0); });
   $('#todayBtn').onclick = () => { cur = today(); render(); };
   $('#fab').innerHTML = IC.plus; $('#fab').onclick = () => openAdd(null);
-  $('#sheet').onclick = e => { if (e.target.id === 'sheet') closeSheet(); };
+  $('#sheet').onclick = e => { if (e.target.id === 'sheet') { if (sheetMode === 'editor') ingDraft = null; closeSheet(); } };
+  $('#sx').onclick = () => { if (sheetMode === 'editor') ingDraft = null; closeSheet(); };
   $('#filePhoto').onchange = e => { if (e.target.files[0]) analysePhoto(e.target.files[0]); };
   $('#fileMF').onchange = e => { if (e.target.files[0]) importMF(e.target.files[0]).catch(err => toast('Import impossible : ' + err.message, 4000)); };
   $('#fileJson').onchange = async e => {
