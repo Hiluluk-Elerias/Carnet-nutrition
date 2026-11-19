@@ -85,6 +85,10 @@ label{font-size:12px;font-weight:500;color:var(--mute);display:block;margin-bott
 .e-right{text-align:right;flex:none}
 .e-right b{font-size:15px}
 .chips{display:flex;gap:7px;font-size:11.5px;font-weight:600;justify-content:flex-end;margin-top:2px}
+.mbtn{border:0;background:var(--card);color:var(--mute);border-radius:999px;width:30px;height:24px;font-size:16px;line-height:1;box-shadow:var(--shadow)}
+.fibcard .it{display:flex;justify-content:space-between;gap:10px;align-items:center}
+.chip{display:inline-block;border:0;background:color-mix(in srgb,var(--acc) 12%,transparent);color:var(--acc);font-weight:600;font-size:13px;padding:8px 12px;border-radius:999px;margin:12px 6px 0 0}
+textarea{min-height:110px;resize:vertical;font-size:15px}
 .add-in{border:0;background:none;color:var(--acc);font-weight:600;padding:12px 0;width:100%;text-align:left}
 /* feuilles */
 .sheet{position:fixed;inset:0;background:rgba(0,0,0,.42);display:none;z-index:20;align-items:flex-end;justify-content:center}
@@ -156,6 +160,7 @@ function defaults() {
     },
     days: {},   // 'AAAA-MM-JJ' -> {entries:[], weight:null}
     foods: [],  // mes aliments : {id,name,code,per:{kcal,p,c,f,fib},serving}
+    meals: [],   // repas habituels : {id,name,items:[entrée sans id ni repas]}
     recipes: [], // mes recettes : {id,name,portions,cooked,items:[{name,grams,per,kcal,p,c,f,fib}],note}
     mf: {}      // import MacroFactor : 'AAAA-MM-JJ' -> {exp, trend}
   };
@@ -163,7 +168,7 @@ function defaults() {
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY));
-    if (s) { const d = defaults(); s.settings = { ...d.settings, ...s.settings }; s.days = s.days || {}; s.foods = s.foods || []; s.mf = s.mf || {}; s.recipes = s.recipes || []; return s; }
+    if (s) { const d = defaults(); s.settings = { ...d.settings, ...s.settings }; s.days = s.days || {}; s.foods = s.foods || []; s.mf = s.mf || {}; s.recipes = s.recipes || []; s.meals = s.meals || []; return s; }
   } catch (e) {}
   return defaults();
 }
@@ -203,7 +208,7 @@ async function ghPut(path, obj, sha, message) {
 }
 const dayUsed = d => d && (d.entries.length || d.weight != null);
 function localMonth(m) { const o = {}; for (const [k, d] of Object.entries(S.days)) if (k.startsWith(m) && dayUsed(d)) o[k] = d; return o; }
-function profil() { const { apiKey, ...settings } = S.settings; return { version: 1, settings, foods: S.foods, recipes: S.recipes, mf: S.mf }; }
+function profil() { const { apiKey, ...settings } = S.settings; return { version: 1, settings, foods: S.foods, recipes: S.recipes, meals: S.meals, mf: S.mf }; }
 let syncTimer = null, syncing = false, syncAgain = false;
 function scheduleSync(ms = 2000) { if (!CFG.token) return; clearTimeout(syncTimer); syncTimer = setTimeout(sync, ms); }
 function setSync(state, text) {
@@ -255,7 +260,7 @@ async function syncProfil(remoteSha) {
   const g = await ghGet(path); if (!g) return;
   const p = g.json || {};
   S.settings = { ...S.settings, ...(p.settings || {}), apiKey: S.settings.apiKey };
-  S.foods = p.foods || S.foods; S.mf = p.mf || S.mf; S.recipes = p.recipes || S.recipes;
+  S.foods = p.foods || S.foods; S.mf = p.mf || S.mf; S.recipes = p.recipes || S.recipes; S.meals = p.meals || S.meals;
   META.sha[path] = g.sha; META.base[path] = JSON.stringify(profil());
 }
 async function sync() {
@@ -396,6 +401,7 @@ const IC = {
   scan: ic('<path d="M4 7V5a1 1 0 0 1 1-1h2M17 4h2a1 1 0 0 1 1 1v2M20 17v2a1 1 0 0 1-1 1h-2M7 20H5a1 1 0 0 1-1-1v-2M8 8v8M11 8v8M14 8v8M17 8v8"/>'),
   photo: ic('<path d="M4 8a2 2 0 0 1 2-2h2l1.5-2h5L16 6h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.5" r="3.5"/>'),
   manual: ic('<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>'),
+  describe: ic('<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>'),
   recipe: ic('<path d="M4 11h16a8 8 0 0 1-16 0z"/><path d="M8 7c0-1.5 1-2 1-3M12 7c0-1.5 1-2 1-3M16 7c0-1.5 1-2 1-3"/>')
 };
 const TABS = { journal: 'Journal', poids: 'Poids', depense: 'Dépense', reglages: 'Réglages' };
@@ -444,20 +450,25 @@ function renderJournal() {
     <div class="macs">${mac('Protéines', t.p, T.p, 'var(--p)')}${mac('Lipides', t.f, T.f, 'var(--f)')}${mac('Glucides', t.c, T.c, 'var(--c)')}${mac('Fibres', t.fib, T.fib, 'var(--fib)')}</div>
   </div>
   <div class="card wcard"><div><div style="font-weight:700">Poids du matin</div><div class="mute xs">${(() => { const tt = displayTrend(), tr = tt.length ? tt[tt.length - 1] : null; return tr != null ? 'Tendance ' + r1(tr) + ' kg' : 'Pèse-toi au réveil'; })()}</div></div>
-    <div class="pill-in"><input id="wIn" type="number" step="0.1" inputmode="decimal" placeholder="—" value="${d && d.weight != null ? d.weight : ''}"><span class="mute">kg</span></div></div>`;
+    <div class="pill-in"><input id="wIn" type="number" step="0.1" inputmode="decimal" placeholder="—" value="${d && d.weight != null ? d.weight : ''}"><span class="mute">kg</span></div></div><!--FIB-->`;
   const groups = {}; (d ? d.entries : []).forEach((e, i) => { (groups[e.meal] = groups[e.meal] || []).push([e, i]); });
   const names = [...MEALS, ...Object.keys(groups).filter(m => !MEALS.includes(m))];
   for (const m of names) {
     const list = (groups[m] || []).sort((a, b) => String(a[0].time || '').localeCompare(String(b[0].time || '')));
     const mk = list.reduce((s, [e]) => s + (+e.kcal || 0), 0);
-    h += `<div class="meal"><div class="meal-h"><span>${esc(m)}</span><span class="mute">${list.length ? r0(mk) + ' kcal' : ''}</span></div><div class="card list">`;
-    for (const [e, i] of list) h += `<div class="entry" data-i="${i}"><div><div class="e-name">${esc(e.name)}</div><div class="mute xs">${e.grams ? r0(e.grams) + ' g' : 'portion'}${e.src === 'photo' ? ' · photo IA' : ''}</div></div>
+    h += `<div class="meal"><div class="meal-h"><span>${esc(m)}</span><span class="row" style="gap:10px"><span class="mute">${list.length ? r0(mk) + ' kcal' : ''}</span>${list.length ? `<button class="mbtn" data-mm="${esc(m)}" aria-label="Options du repas">⋯</button>` : ''}</span></div><div class="card list">`;
+    for (const [e, i] of list) h += `<div class="entry" data-i="${i}"><div><div class="e-name">${esc(e.name)}</div><div class="mute xs">${e.grams ? r0(e.grams) + ' g' : 'portion'}${e.src === 'photo' ? ' · photo IA' : e.src === 'describe' ? ' · décrit (IA)' : ''}</div></div>
       <div class="e-right"><b>${r0(e.kcal)}</b> <span class="mute xs">kcal</span><div class="chips"><span style="color:var(--p)">${r0(e.p)}P</span><span style="color:var(--f)">${r0(e.f)}L</span><span style="color:var(--c)">${r0(e.c)}G</span></div></div></div>`;
     if (MEALS.includes(m)) h += `<button class="add-in" data-meal="${esc(m)}">+ Ajouter</button>`;
     h += `</div></div>`;
   }
+  if (d && d.entries.length) h += `<button class="add-in" id="copyDay" style="padding-left:6px">Copier toute la journée vers…</button>`;
+  h = h.replace('<!--FIB-->', fiberCard(t, T));
   $('#main').innerHTML = h + '<div style="height:60px"></div>';
   bindWeek();
+  document.querySelectorAll('[data-mm]').forEach(b => b.onclick = () => openMealMenu(b.dataset.mm));
+  if ($('#copyDay')) $('#copyDay').onclick = () => openCopy(S.days[cur].entries, null, 'la journée');
+  document.querySelectorAll('[data-fib]').forEach(el => el.onclick = () => openQty(FIB_IDEAS[+el.dataset.fib]));
   $('#wIn').onchange = e => { const v = num(e.target.value); day(cur).weight = v; save(); toast(v == null ? 'Pesée effacée' : 'Poids enregistré'); render(); };
   document.querySelectorAll('.entry').forEach(el => el.onclick = () => openEdit(+el.dataset.i));
   document.querySelectorAll('[data-meal]').forEach(b => b.onclick = () => openAdd(b.dataset.meal));
@@ -465,10 +476,16 @@ function renderJournal() {
 function openAdd(meal) {
   pendingMeal = meal || null;
   const rec = recentFoods().slice(0, 10);
+  const yk = addDays(cur, -1), yItems = meal && S.days[yk] ? S.days[yk].entries.filter(e => e.meal === meal) : [];
+  const yKcal = yItems.reduce((s, e) => s + (+e.kcal || 0), 0);
   openSheet(`<h3>Ajouter${meal ? ' · ' + esc(meal) : ''}</h3>
-    <div class="tiles"><button class="tile" id="tS">${IC.search}Rechercher</button><button class="tile" id="tB">${IC.scan}Scanner</button><button class="tile" id="tR">${IC.recipe}Recettes</button><button class="tile" id="tP">${IC.photo}Photo IA</button><button class="tile" id="tM">${IC.manual}Manuel</button></div>
+    <div class="tiles t3"><button class="tile" id="tS">${IC.search}Rechercher</button><button class="tile" id="tB">${IC.scan}Scanner</button><button class="tile" id="tR">${IC.recipe}Recettes</button><button class="tile" id="tD">${IC.describe}Décrire</button><button class="tile" id="tP">${IC.photo}Photo IA</button><button class="tile" id="tM">${IC.manual}Manuel</button></div>
+    ${yItems.length ? `<button class="chip" id="yday">↺ Comme hier · ${r0(yKcal)} kcal</button>` : ''}
+    ${S.meals.length ? `<label style="margin-top:18px">Repas habituels</label><div id="hab">${S.meals.map((m, i) => `<div class="it" data-i="${i}"><div>${esc(m.name)}</div><div class="mute">${m.items.length} aliment${m.items.length > 1 ? 's' : ''} · ${r0(m.items.reduce((s, e) => s + (+e.kcal || 0), 0))} kcal</div></div>`).join('')}</div>` : ''}
     ${rec.length ? `<label style="margin-top:18px">Récents</label><div id="rec">${rec.map((f, i) => foodItem(f, i, 'rec')).join('')}</div>` : ''}`);
-  $('#tS').onclick = () => openSearch(); $('#tB').onclick = openScan; $('#tP').onclick = openPhoto; $('#tM').onclick = () => openManual(); $('#tR').onclick = openRecipes;
+  $('#tS').onclick = () => openSearch(); $('#tB').onclick = openScan; $('#tP').onclick = openPhoto; $('#tM').onclick = () => openManual(); $('#tR').onclick = openRecipes; $('#tD').onclick = openDescribe;
+  if ($('#yday')) $('#yday').onclick = () => { addEntries(yItems, meal); closeSheet(); toast('Repas d’hier ajouté'); };
+  document.querySelectorAll('#hab .it').forEach(el => el.onclick = () => { addEntries(S.meals[+el.dataset.i].items, pendingMeal || MEALS[defaultMeal()]); closeSheet(); toast('Repas ajouté'); });
   document.querySelectorAll('#rec .it').forEach(el => el.onclick = () => openQty(rec[+el.dataset.i]));
 }
 
@@ -482,11 +499,11 @@ function closeSheet() { stopCam(); if (ingDraft) return openRecipeEditor(); pend
 function stopCam() { scanning = false; if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; } }
 function mealSelect(sel) { return `<select id="meal">${[...MEALS].map((m, i) => `<option value="${esc(m)}" ${(sel == null ? (pendingMeal ? m === pendingMeal : i === defaultMeal()) : sel === m) ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select>`; }
 
-function recentFoods() {
+function recentFoods(limit = 20, daysBack = 45) {
   const seen = new Map();
-  const ks = Object.keys(S.days).sort().reverse().slice(0, 45);
+  const ks = Object.keys(S.days).sort().reverse().slice(0, daysBack);
   for (const k of ks) for (const e of S.days[k].entries) if (e.per && !seen.has(e.name)) seen.set(e.name, { name: e.name, per: e.per, serving: e.grams, code: e.code });
-  return [...seen.values()].slice(0, 20);
+  return [...seen.values()].slice(0, limit);
 }
 function foodItem(f, i, src) { return `<div class="it" data-src="${src}" data-i="${i}"><div>${esc(f.name)}</div><div class="mute">${r0(f.per.kcal)} kcal · P ${r1(f.per.p)} · G ${r1(f.per.c)} · L ${r1(f.per.f)} / 100 g</div></div>`; }
 
@@ -644,7 +661,7 @@ function openRecipeEditor() {
     <label style="margin-top:14px">Ingrédients</label>
     <div id="ings">${r.items.map((it, i) => `<div class="ing"><div><div style="font-weight:600;font-size:14px">${esc(it.name)}</div><div class="mute xs">${r0(itemVals(it).kcal)} kcal</div></div>
       ${it.per ? `<input type="number" inputmode="decimal" data-ig="${i}" value="${r1(it.grams)}">` : `<span class="mute xs" style="text-align:right">${it.grams ? r0(it.grams) + ' g' : 'fixe'}</span>`}<button class="x" data-ix="${i}">×</button></div>`).join('') || '<p class="mute">Ajoute au moins un ingrédient.</p>'}</div>
-    <div class="tiles t3" style="margin-top:10px"><button class="tile" id="iS">${IC.search}Rechercher</button><button class="tile" id="iB">${IC.scan}Scanner</button><button class="tile" id="iM">${IC.manual}Manuel</button></div>
+    <div class="tiles" style="margin-top:10px;grid-template-columns:repeat(4,1fr)"><button class="tile" id="iS">${IC.search}Rechercher</button><button class="tile" id="iB">${IC.scan}Scanner</button><button class="tile" id="iT">${IC.describe}Importer</button><button class="tile" id="iM">${IC.manual}Manuel</button></div>
     <div class="card" style="margin-top:12px;margin-bottom:0"><b>${r0(t.kcal / n)} kcal / portion</b> · P ${r1(t.p / n)} · G ${r1(t.c / n)} · L ${r1(t.f / n)} · Fibres ${r1(t.fib / n)}<div class="mute xs">Total : ${r0(t.kcal)} kcal${W ? ' · ' + r0(W) + ' g' : ''}</div></div>
     <div class="row wrap" style="margin-top:12px"><button class="btn pri" id="rSave">Enregistrer</button>${r.isNew ? '' : '<button class="btn danger" id="rDel">Supprimer</button>'}<button class="btn" id="rCancel">Annuler</button></div>`;
   $('#sheet').classList.add('on');
@@ -653,7 +670,7 @@ function openRecipeEditor() {
   $('#rCook').onchange = e => { r.cooked = num(e.target.value) || null; openRecipeEditor(); };
   document.querySelectorAll('[data-ig]').forEach(el => el.onchange = () => { r.items[+el.dataset.ig].grams = num(el.value) || 0; openRecipeEditor(); });
   document.querySelectorAll('[data-ix]').forEach(el => el.onclick = () => { r.items.splice(+el.dataset.ix, 1); openRecipeEditor(); });
-  $('#iS').onclick = () => openSearch(); $('#iB').onclick = openScan; $('#iM').onclick = () => openManual();
+  $('#iS').onclick = () => openSearch(); $('#iB').onclick = openScan; $('#iM').onclick = () => openManual(); $('#iT').onclick = openRecipeImport;
   $('#rCancel').onclick = () => { ingDraft = null; openRecipes(); };
   if ($('#rDel')) $('#rDel').onclick = () => {
     $('#rDel').outerHTML = '<button class="btn danger" id="rDel2">Confirmer la suppression</button>';
@@ -739,6 +756,120 @@ function resizeImage(file, max = 1024) {
     }; img.onerror = rej; img.src = URL.createObjectURL(file);
   });
 }
+async function askAI(content, maxTokens = 2000) {
+  if (!S.settings.apiKey) throw new Error('ajoute ta clé API Anthropic dans Réglages');
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': S.settings.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+    body: JSON.stringify({ model: S.settings.model, max_tokens: maxTokens, messages: [{ role: 'user', content }] })
+  });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error && j.error.message || r.status);
+  return (j.content || []).map(c => c.text || '').join('');
+}
+const cutJSON = (txt, a, b) => JSON.parse(txt.slice(txt.indexOf(a), txt.lastIndexOf(b) + 1));
+const AI_ITEM = '{"nom":"…","grammes":0,"kcal":0,"proteines":0,"glucides":0,"lipides":0,"fibres":0}';
+function needKey(title) {
+  if (S.settings.apiKey) return false;
+  openSheet(`<h3>${title}</h3><p>Ajoute d’abord une clé API Anthropic dans <b>Réglages</b> (console.anthropic.com). Une analyse coûte moins d’un centime.</p><button class="btn" id="close">Fermer</button>`);
+  $('#close').onclick = closeSheet; return true;
+}
+/* ---------- Décrire un repas ---------- */
+function openDescribe() {
+  if (needKey('Décrire un repas')) return;
+  openSheet(`<h3>Décrire un repas</h3>
+    <textarea id="desc" placeholder="ex. 2 œufs au plat, 80 g de riz basmati cru, une cuillère à soupe d’huile d’olive, un yaourt nature"></textarea>
+    <div class="row" style="margin-top:10px"><button class="btn pri" id="go">Analyser</button><button class="btn" id="close">Fermer</button></div>
+    <div id="aiRes" style="margin-top:10px"></div>`);
+  $('#close').onclick = closeSheet;
+  $('#go').onclick = async () => {
+    const txt = $('#desc').value.trim(); if (!txt) return;
+    const out = $('#aiRes'); out.innerHTML = '<p class="mute">Analyse en cours…</p>';
+    try {
+      const prompt = `Tu es nutritionniste. Voici ce que l’utilisateur a mangé : « ${txt} ».
+Liste chaque aliment séparément. Utilise les quantités indiquées ; sinon estime une portion française standard. Précise si la quantité est crue ou cuite dans le nom quand c’est utile. Donne les valeurs nutritionnelles pour la quantité (table Ciqual si possible).
+Réponds UNIQUEMENT avec un tableau JSON, sans texte autour : [${AI_ITEM}]`;
+      showAiItems(cutJSON(await askAI([{ type: 'text', text: prompt }]), '[', ']'), 'describe');
+    } catch (e) { out.innerHTML = `<p style="color:var(--danger)">Échec : ${esc(e.message)}</p>`; }
+  };
+  setTimeout(() => $('#desc') && $('#desc').focus(), 50);
+}
+/* ---------- Importer une recette depuis un texte ---------- */
+function openRecipeImport() {
+  if (!S.settings.apiKey) { toast('Ajoute ta clé API dans Réglages'); return; }
+  openSheet(`<h3>Importer une recette</h3>
+    <p class="mute">Colle la recette ou sa liste d’ingrédients (depuis un site, une photo de livre recopiée, tes notes…). Indique le nombre de portions si tu le connais.</p>
+    <textarea id="rtxt" placeholder="Pour 4 personnes : 300 g de lentilles corail, 1 oignon, 400 ml de lait de coco, 2 c. à soupe de curry…"></textarea>
+    <div class="row" style="margin-top:10px"><button class="btn pri" id="go">Analyser</button><button class="btn" id="cancel">Annuler</button></div><div id="aiRes" style="margin-top:10px"></div>`);
+  $('#cancel').onclick = closeSheet;
+  $('#go').onclick = async () => {
+    const txt = $('#rtxt').value.trim(); if (!txt) return;
+    $('#aiRes').innerHTML = '<p class="mute">Analyse en cours…</p>';
+    try {
+      const prompt = `Tu es nutritionniste. Analyse cette recette :
+---
+${txt}
+---
+Extrais le nom de la recette, le nombre de portions (1 si inconnu) et chaque ingrédient avec sa quantité en grammes (convertis cuillères, pièces, ml en grammes) et ses valeurs nutritionnelles pour cette quantité (table Ciqual si possible).
+Réponds UNIQUEMENT avec un objet JSON, sans texte autour : {"nom":"…","portions":1,"ingredients":[${AI_ITEM}]}`;
+      const o = cutJSON(await askAI([{ type: 'text', text: prompt }], 3000), '{', '}');
+      if (!ingDraft.name && o.nom) ingDraft.name = o.nom;
+      if (o.portions > 0 && (!ingDraft.items.length || ingDraft.portions <= 1)) ingDraft.portions = Math.round(o.portions);
+      for (const it of o.ingredients || []) {
+        const g = num(it.grammes) || 0, vals = { kcal: num(it.kcal) || 0, p: num(it.proteines) || 0, c: num(it.glucides) || 0, f: num(it.lipides) || 0, fib: num(it.fibres) || 0 };
+        ingDraft.items.push({ name: it.nom || 'Ingrédient', grams: g || null, per: g ? scale(vals, 10000 / g) : null, ...vals, src: 'ia' });
+      }
+      openRecipeEditor(); toast((o.ingredients || []).length + ' ingrédients importés : vérifie les quantités');
+    } catch (e) { $('#aiRes').innerHTML = `<p style="color:var(--danger)">Échec : ${esc(e.message)}</p>`; }
+  };
+}
+/* ---------- Copier, repas habituels ---------- */
+function cloneEntry(e, meal) { const { id, time, ...rest } = e; return { ...JSON.parse(JSON.stringify(rest)), id: uid(), meal: meal || e.meal }; }
+function addEntries(list, meal, k = cur) { const d = day(k); for (const e of list) d.entries.push(cloneEntry(e, meal)); save(); }
+function openMealMenu(m) {
+  const list = S.days[cur].entries.filter(e => e.meal === m), kc = list.reduce((s, e) => s + (+e.kcal || 0), 0);
+  openSheet(`<h3>${esc(m)}</h3><p class="mute">${list.length} aliment${list.length > 1 ? 's' : ''} · ${r0(kc)} kcal</p>
+    <div style="display:grid;gap:8px"><button class="btn" id="mCopy">Copier vers un autre jour…</button><button class="btn" id="mSave">Enregistrer comme repas habituel</button><button class="btn danger" id="mDel">Vider ce repas</button><button class="btn" id="close">Fermer</button></div>`);
+  $('#close').onclick = closeSheet;
+  $('#mCopy').onclick = () => openCopy(list, m, m.toLowerCase());
+  $('#mSave').onclick = () => {
+    openSheet(`<h3>Repas habituel</h3><label>Nom</label><input id="hn" value="${esc(m + ' type')}">
+      <div class="row" style="margin-top:12px"><button class="btn pri" id="ok">Enregistrer</button><button class="btn" id="close">Annuler</button></div>`);
+    $('#close').onclick = closeSheet;
+    $('#ok').onclick = () => { S.meals.push({ id: uid(), name: $('#hn').value.trim() || m, items: list.map(e => { const { id, meal, time, ...r } = e; return r; }) }); save(); closeSheet(); toast('Repas habituel enregistré'); };
+  };
+  $('#mDel').onclick = () => {
+    $('#mDel').outerHTML = '<button class="btn danger" id="mDel2">Confirmer : supprimer ces aliments</button>';
+    $('#mDel2').onclick = () => { S.days[cur].entries = S.days[cur].entries.filter(e => e.meal !== m); save(); closeSheet(); toast('Repas vidé'); };
+  };
+}
+function openCopy(list, meal, label) {
+  const t = today(), target = cur < t ? t : addDays(cur, 1);
+  openSheet(`<h3>Copier ${esc(label)}</h3><p class="mute">${list.length} aliment${list.length > 1 ? 's' : ''} · ${r0(list.reduce((s, e) => s + (+e.kcal || 0), 0))} kcal</p>
+    <div class="row wrap" style="margin-bottom:10px">${[[t, "Aujourd'hui"], [addDays(t, 1), 'Demain'], [addDays(t, -1), 'Hier']].filter(([k]) => k !== cur).map(([k, l]) => `<button class="btn sm" data-dk="${k}">${l}</button>`).join('')}</div>
+    <div class="grid2"><div><label>Jour</label><input type="date" id="cDate" value="${target}"></div>${meal ? `<div><label>Repas</label>${mealSelect(meal)}</div>` : '<div></div>'}</div>
+    <div class="row" style="margin-top:12px"><button class="btn pri" id="ok">Copier</button><button class="btn" id="close">Annuler</button></div>`);
+  document.querySelectorAll('[data-dk]').forEach(b => b.onclick = () => $('#cDate').value = b.dataset.dk);
+  $('#close').onclick = closeSheet;
+  $('#ok').onclick = () => {
+    const k = $('#cDate').value; if (!/^\d{4}-\d{2}-\d{2}$/.test(k)) return toast('Choisis une date');
+    addEntries(list, meal ? $('#meal').value : null, k); closeSheet(); toast('Copié vers ' + fmtDate(k).toLowerCase());
+  };
+}
+/* ---------- Coup de pouce fibres ---------- */
+let FIB_IDEAS = [];
+function fiberCard(t, T) {
+  const miss = T.fib - t.fib; FIB_IDEAS = [];
+  if (cur !== today() || miss < 3) return '';
+  const pool = new Map();
+  for (const f of [...S.foods, ...recentFoods(400, 120)]) if (f.per && f.per.fib >= 2 && f.per.kcal > 0 && !pool.has(f.name)) pool.set(f.name, f);
+  // Portion habituelle apportant au moins 2 g de fibres, classées par fibres par calorie
+  const gain = f => f.per.fib * (f.serving || 100) / 100;
+  FIB_IDEAS = [...pool.values()].filter(f => gain(f) >= 2).sort((a, b) => b.per.fib / b.per.kcal - a.per.fib / a.per.kcal).slice(0, 3);
+  if (!FIB_IDEAS.length) return '';
+  return `<div class="card fibcard"><div style="font-weight:700">Fibres : il en manque ${r0(miss)} g</div><div class="mute xs">Parmi tes aliments, les plus riches en fibres pour peu de calories</div>
+    ${FIB_IDEAS.map((f, i) => { const g = f.serving || 100; return `<div class="it" data-fib="${i}"><div><div style="font-weight:600">${esc(f.name)}</div><div class="mute xs">${r0(g)} g · ${r0(f.per.kcal * g / 100)} kcal</div></div><b style="color:var(--fib);white-space:nowrap">+${r1(f.per.fib * g / 100)} g</b></div>`; }).join('')}</div>`;
+}
 async function analysePhoto(file) {
   const out = $('#aiRes'); if (!out) return;
   out.innerHTML = '<p class="mute">Analyse en cours…</p>';
@@ -747,19 +878,11 @@ async function analysePhoto(file) {
     const hint = ($('#hint') && $('#hint').value.trim()) || '';
     const prompt = `Tu es nutritionniste. Identifie chaque aliment visible sur cette photo de repas, estime sa quantité en grammes et ses valeurs nutritionnelles pour cette quantité (références françaises, table Ciqual si possible).${hint ? ' Précisions de l’utilisateur : ' + hint : ''}
 Réponds UNIQUEMENT avec un tableau JSON, sans texte autour : [{"nom":"…","grammes":0,"kcal":0,"proteines":0,"glucides":0,"lipides":0,"fibres":0}]`;
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': S.settings.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({ model: S.settings.model, max_tokens: 1500, messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } }, { type: 'text', text: prompt }] }] })
-    });
-    const j = await r.json();
-    if (!r.ok) throw new Error(j.error && j.error.message || r.status);
-    const txt = (j.content || []).map(c => c.text || '').join('');
-    const items = JSON.parse(txt.slice(txt.indexOf('['), txt.lastIndexOf(']') + 1));
-    showAiItems(items);
+    const txt = await askAI([{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } }, { type: 'text', text: prompt }]);
+    showAiItems(cutJSON(txt, '[', ']'), 'photo');
   } catch (e) { out.innerHTML = `<p style="color:var(--danger)">Échec de l’analyse : ${esc(e.message)}</p>`; }
 }
-function showAiItems(items) {
+function showAiItems(items, src = 'photo') {
   const out = $('#aiRes');
   out.innerHTML = `<label>Résultat — modifie si besoin (g · kcal · P · G · L)</label>` + items.map((it, i) => `
     <div class="ai-row" data-i="${i}"><input type="checkbox" checked class="ck"><input class="nm" value="${esc(it.nom)}"><input class="gr" type="number" value="${r0(it.grammes)}">
@@ -778,7 +901,7 @@ function showAiItems(items) {
       if (!row.querySelector('.ck').checked) return;
       const q = c => num(row.querySelector(c).value) || 0;
       const g = q('.gr'), vals = { kcal: q('.k'), p: q('.p'), c: q('.c'), f: q('.f'), fib: q('.fb') };
-      day(cur).entries.push({ id: uid(), name: row.querySelector('.nm').value || 'Aliment', meal, grams: g, per: g ? scale(vals, 10000 / g) : null, ...vals, src: 'photo' }); n++;
+      day(cur).entries.push({ id: uid(), name: row.querySelector('.nm').value || 'Aliment', meal, grams: g, per: g ? scale(vals, 10000 / g) : null, ...vals, src }); n++;
     });
     save(); closeSheet(); toast(n + ' aliment(s) ajouté(s)');
   };
@@ -1018,9 +1141,11 @@ function renderReglages() {
     <p class="mute">La clé reste dans ce navigateur. Elle se crée sur console.anthropic.com.</p></div>
   <div class="card"><h2>Sauvegarde</h2><p class="mute">Copie complète de tes données, en plus de la synchronisation.</p>
     <div class="row wrap">${NATIVE ? '' : '<button class="btn pri" id="exp">Exporter (.json)</button>'}<button class="btn" id="imp">Importer une sauvegarde</button><button class="btn danger" id="reset">Tout effacer</button></div></div>
+  <div class="card"><h2>Repas habituels (${S.meals.length})</h2>${S.meals.map((m, i) => `<div class="entry"><div>${esc(m.name)}<div class="mute">${r0(m.items.reduce((s, e) => s + (+e.kcal || 0), 0))} kcal</div></div><button class="btn sm danger" data-delm="${i}">×</button></div>`).join('') || '<p class="mute">Aucun. Enregistre-en un depuis le bouton ⋯ d’un repas.</p>'}</div>
   <div class="card"><h2>Mes aliments (${S.foods.length})</h2>${S.foods.map((f, i) => `<div class="entry"><div>${esc(f.name)}<div class="mute">${r0(f.per.kcal)} kcal / 100 g</div></div><button class="btn sm danger" data-del="${i}">×</button></div>`).join('') || '<p class="mute">Aucun.</p>'}</div>`;
   bindSettings();
   document.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { S.foods.splice(+b.dataset.del, 1); save(); render(); });
+  document.querySelectorAll('[data-delm]').forEach(b => b.onclick = () => { S.meals.splice(+b.dataset.delm, 1); save(); render(); });
   document.querySelectorAll('[data-cfg]').forEach(el => el.onchange = () => {
     const k = el.dataset.cfg, v = el.value.trim();
     if (k !== 'token' && CFG[k] !== v) { META = { base: {}, sha: {}, lastSync: 0, error: '' }; saveMeta(); }
