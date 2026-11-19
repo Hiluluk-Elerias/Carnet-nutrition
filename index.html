@@ -83,7 +83,13 @@ label{font-size:12px;font-weight:500;color:var(--mute);display:block;margin-bott
 .hero-side>div{display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid var(--line);padding-bottom:7px}
 .hero-side>div:last-child{border:0;padding:0}
 .hero-side b{font-size:17px;font-weight:700}
-.macs{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+.macwrap{margin-top:16px;padding-top:12px;border-top:1px solid var(--line)}
+.macpager{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}
+.macpager::-webkit-scrollbar{display:none}
+.macs{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;flex:0 0 100%;scroll-snap-align:start;padding-top:4px}
+.mdots{display:flex;justify-content:center;gap:6px;margin-top:10px}
+.mdots button{border:0;background:var(--card2);color:var(--mute);font:inherit;font-size:12px;font-weight:600;padding:5px 12px;border-radius:999px}
+.mdots button.on{background:var(--ink);color:var(--bg)}
 .mac{display:flex;flex-direction:column;align-items:center;gap:2px}
 .mac-l{font-size:12px;font-weight:600;margin-top:4px}
 .wcard{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px}
@@ -469,6 +475,7 @@ function optimize() {
 
 /* ===================== Interface ===================== */
 let selMode = false, sel = new Set(), justLong = false;
+let macPage = (() => { try { return +localStorage.getItem('carnet-nutrition-macpage') === 1 ? 1 : 0; } catch (e) { return 0; } })();
 let tab = 'journal', cur = today(), stream = null, scanning = false, pendingMeal = null, ingDraft = null;
 const ic = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
 const IC = {
@@ -519,6 +526,8 @@ function ring(v, max, color, size, sw) {
 function renderJournal() {
   const t = totals(cur), T = targets(), d = S.days[cur], left = T.kcal - t.kcal;
   const mac = (lbl, v, max, col) => `<div class="mac"><div class="ring-s">${ring(v, max, col, 60, 6)}<div class="ring-in"><b>${r0(v)}</b></div></div><div class="mac-l">${lbl}</div><div class="mute xs">/ ${r0(max)} g</div></div>`;
+  // Même jauge, mais le chiffre au centre indique ce qu'il reste (en rouge avec un + si l'objectif est dépassé)
+  const macR = (lbl, v, max, col) => { const left = max - v; return `<div class="mac"><div class="ring-s">${ring(v, max, col, 60, 6)}<div class="ring-in"><b style="${left < 0 ? 'color:var(--danger)' : ''}">${left < 0 ? '+' + r0(-left) : r0(left)}</b></div></div><div class="mac-l">${lbl}</div><div class="mute xs">${left < 0 ? 'en trop' : 'restants'}</div></div>`; };
   let h = weekStrip() + `<div class="card">
     <div class="hero-top">
       <div class="ring-b">${ring(t.kcal, T.kcal, 'var(--kcal)', 136, 12)}<div class="ring-in"><span class="big">${r0(Math.abs(left))}</span><span class="mute xs">${left < 0 ? 'kcal en trop' : 'restantes'}</span></div></div>
@@ -528,7 +537,10 @@ function renderJournal() {
         <div><span class="mute">Dépense</span><b>${r0(T.tdee)}</b></div>
       </div>
     </div>
-    <div class="macs">${mac('Protéines', t.p, T.p, 'var(--p)')}${mac('Lipides', t.f, T.f, 'var(--f)')}${mac('Glucides', t.c, T.c, 'var(--c)')}${mac('Fibres', t.fib, T.fib, 'var(--fib)')}</div>
+    <div class="macwrap"><div class="macpager" id="macpager">
+      <div class="macs">${mac('Protéines', t.p, T.p, 'var(--p)')}${mac('Lipides', t.f, T.f, 'var(--f)')}${mac('Glucides', t.c, T.c, 'var(--c)')}${mac('Fibres', t.fib, T.fib, 'var(--fib)')}</div>
+      <div class="macs">${macR('Protéines', t.p, T.p, 'var(--p)')}${macR('Lipides', t.f, T.f, 'var(--f)')}${macR('Glucides', t.c, T.c, 'var(--c)')}${macR('Fibres', t.fib, T.fib, 'var(--fib)')}</div>
+    </div><div class="mdots"><button data-mp="0" class="${macPage === 0 ? 'on' : ''}">Consommé</button><button data-mp="1" class="${macPage === 1 ? 'on' : ''}">Restant</button></div></div>
   </div>
   <div class="card wcard2"><div><div style="font-weight:700">Poids du matin</div><div class="mute xs">${(() => { const tt = displayTrend(), tr = tt.length ? tt[tt.length - 1] : null; return tr != null ? 'Tendance ' + r1(tr) + ' kg' : 'Pèse-toi au réveil'; })()}</div></div>
     <div class="pill-in sm"><input id="wIn" type="number" step="0.1" inputmode="decimal" placeholder="—" value="${d && d.weight != null ? d.weight : ''}"><span class="mute">kg</span></div>
@@ -559,6 +571,17 @@ function renderJournal() {
   h = h.replace('<!--FIB-->', fiberCard(t, T));
   $('#main').innerHTML = h + '<div style="height:60px"></div>';
   bindWeek();
+  const pager = $('#macpager');
+  if (pager) {
+    requestAnimationFrame(() => { pager.scrollLeft = macPage * pager.clientWidth; });
+    let st = null;
+    pager.addEventListener('scroll', () => { clearTimeout(st); st = setTimeout(() => {
+      const pg = Math.round(pager.scrollLeft / Math.max(1, pager.clientWidth)); if (pg === macPage) return;
+      macPage = pg; try { localStorage.setItem('carnet-nutrition-macpage', String(pg)); } catch (e) {}
+      document.querySelectorAll('[data-mp]').forEach(b => b.classList.toggle('on', +b.dataset.mp === pg));
+    }, 80); });
+    document.querySelectorAll('[data-mp]').forEach(b => b.onclick = () => pager.scrollTo({ left: +b.dataset.mp * pager.clientWidth, behavior: 'smooth' }));
+  }
   document.querySelectorAll('[data-mm]').forEach(b => b.onclick = () => openMealMenu(b.dataset.mm));
   if ($('#copyDay')) $('#copyDay').onclick = () => openCopy(S.days[cur].entries, null, 'la journée');
   if ($('#fibIdeas')) $('#fibIdeas').onclick = openFiberIdeas;
