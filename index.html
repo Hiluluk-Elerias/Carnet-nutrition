@@ -613,37 +613,104 @@ function recentFoods(limit = 20, daysBack = 45) {
 }
 function foodItem(f, i, src) { return `<div class="it irow" data-src="${src}" data-i="${i}">${fi(f.name)}<div><div style="font-weight:600;font-size:14.5px">${esc(f.name)}</div><div class="mute">${r0(f.per.kcal)} kcal · P ${r1(f.per.p)} · G ${r1(f.per.c)} · L ${r1(f.per.f)} / 100 g</div></div></div>`; }
 
+/* ---------- Aliments de base (valeurs moyennes pour 100 g, d'après la table Ciqual ; glucides hors fibres) ----------
+   [nom, kcal, protéines, glucides, lipides, fibres, portion (g), pièce (g), nom de la pièce] */
+const BASE_RAW = [
+  ['Banane', 90, 1.1, 19.7, 0.3, 2, 120, 120, 'banane'], ['Pomme', 53, 0.3, 11.6, 0.2, 2, 150, 150, 'pomme'], ['Poire', 55, 0.4, 11, 0.3, 3, 160, 160, 'poire'],
+  ['Orange', 47, 0.9, 9.2, 0.2, 2, 150, 150, 'orange'], ['Clémentine', 46, 0.8, 9.5, 0.2, 1.7, 60, 60, 'clémentine'], ['Kiwi', 58, 1, 10.3, 0.6, 3, 75, 75, 'kiwi'],
+  ['Fraises', 32, 0.7, 5.8, 0.3, 2, 125], ['Framboises', 45, 1.2, 5.4, 0.7, 6.5, 125], ['Myrtilles', 57, 0.7, 12, 0.3, 2.4, 100], ['Raisin', 70, 0.7, 16, 0.2, 0.9, 125],
+  ['Pêche', 39, 0.8, 8.2, 0.2, 1.5, 150, 150, 'pêche'], ['Abricot', 48, 0.9, 9, 0.2, 2, 40, 40, 'abricot'], ['Prune', 46, 0.7, 10, 0.3, 1.6, 30, 30, 'prune'],
+  ['Cerises', 63, 1.1, 14, 0.3, 1.6, 100], ['Ananas', 52, 0.5, 11.5, 0.2, 1.4, 150], ['Mangue', 65, 0.7, 14, 0.3, 1.7, 150], ['Melon', 34, 0.8, 7, 0.2, 0.9, 200],
+  ['Pastèque', 32, 0.6, 7, 0.2, 0.4, 250], ['Avocat', 160, 2, 1.8, 14.7, 6.7, 100, 140, 'avocat'], ['Citron (jus)', 25, 0.4, 7, 0.1, 0.3, 15],
+  ['Datte sèche', 282, 2.5, 66, 0.4, 7, 25, 8, 'datte'], ['Pruneau', 240, 2.2, 57, 0.4, 7.1, 30, 8, 'pruneau'], ['Abricot sec', 241, 3.4, 54, 0.5, 7.3, 30, 8, 'abricot sec'],
+  ['Raisins secs', 299, 3.1, 75, 0.5, 4.5, 30], ['Compote sans sucre ajouté', 50, 0.3, 11, 0.2, 1.5, 100],
+  ['Amande', 579, 21, 9, 50, 12.5, 30, 1.2, 'amande'], ['Noix', 698, 15, 7, 65, 6.7, 30, 5, 'cerneau'], ['Noisette', 646, 15, 7, 61, 9.7, 30, 1.5, 'noisette'],
+  ['Noix de cajou', 588, 18, 27, 46, 3.3, 30, 1.6, 'noix'], ['Pistaches', 600, 20, 17, 49, 10, 30], ['Cacahuètes grillées', 620, 25, 12, 50, 8, 30],
+  ['Beurre de cacahuète', 600, 25, 12, 50, 6, 15], ['Graines de chia', 486, 17, 7.7, 31, 34, 15], ['Graines de lin', 534, 18, 1.6, 42, 27, 10],
+  ['Tomate', 18, 0.9, 2.8, 0.2, 1.2, 120, 120, 'tomate'], ['Tomates cerises', 20, 0.9, 3, 0.2, 1.3, 100], ['Concombre', 13, 0.6, 2, 0.1, 0.7, 150],
+  ['Carotte crue', 36, 0.8, 7, 0.2, 2.7, 80, 80, 'carotte'], ['Carottes cuites', 25, 0.6, 4.5, 0.2, 2.6, 150], ['Courgette cuite', 16, 1, 1.8, 0.3, 1.4, 200],
+  ['Brocoli cuit', 35, 2.4, 4, 0.4, 3.3, 200], ['Haricots verts cuits', 35, 1.9, 4.7, 0.3, 3.2, 200], ['Épinards cuits', 23, 3, 1, 0.5, 2.7, 150],
+  ['Chou-fleur cuit', 23, 1.9, 2.3, 0.4, 2.3, 200], ['Poivron', 27, 1, 4.6, 0.3, 1.9, 100], ['Champignons de Paris', 22, 3, 0.6, 0.3, 1.3, 100],
+  ['Salade verte', 14, 1.2, 1.3, 0.2, 1.3, 50], ['Oignon', 34, 1.1, 6.3, 0.1, 1.6, 50], ['Poireaux cuits', 25, 0.8, 4.2, 0.3, 2.2, 150],
+  ['Petits pois cuits', 84, 5.4, 10, 0.2, 5.5, 150], ['Maïs doux', 96, 3, 16, 1.5, 2.5, 100], ['Aubergine cuite', 25, 1, 4, 0.2, 2.5, 150],
+  ['Betterave cuite', 44, 1.7, 8, 0.2, 2, 100], ['Artichaut cuit', 47, 2.9, 5.1, 0.3, 5.4, 120],
+  ['Pomme de terre cuite à l’eau', 80, 1.8, 17, 0.1, 1.8, 200], ['Patate douce cuite', 90, 2, 17.4, 0.2, 3.3, 200], ['Frites au four', 210, 3, 30, 8, 3, 150],
+  ['Riz blanc cuit', 130, 2.7, 28, 0.3, 0.4, 150], ['Riz blanc cru', 350, 7, 78, 0.6, 1.3, 60], ['Riz complet cuit', 123, 2.7, 24, 1, 1.6, 150],
+  ['Pâtes cuites', 131, 5, 26, 0.9, 1.8, 200], ['Pâtes crues', 358, 12.5, 70, 1.5, 3, 80], ['Pâtes complètes cuites', 124, 5, 23, 1, 4, 200],
+  ['Quinoa cuit', 120, 4.4, 18.5, 1.9, 2.8, 150], ['Semoule (couscous) cuite', 112, 3.8, 23, 0.2, 1.4, 150],
+  ['Lentilles cuites', 116, 9, 16.3, 0.4, 7.9, 150], ['Pois chiches cuits', 164, 8.9, 19.8, 2.6, 7.6, 120], ['Haricots rouges cuits', 127, 8.7, 16.4, 0.5, 6.4, 120],
+  ['Flocons d’avoine', 379, 13, 58, 6.5, 10, 40], ['Muesli', 370, 10, 62, 6, 8, 50], ['Corn flakes', 378, 7, 84, 0.9, 3, 40],
+  ['Baguette', 266, 9, 54, 1.3, 2.5, 50, 50, 'morceau'], ['Pain complet', 247, 13, 35, 3.4, 6.8, 60, 35, 'tranche'], ['Pain de mie', 270, 8, 48, 4, 3, 50, 25, 'tranche'],
+  ['Biscotte', 400, 11, 75, 5, 4, 18, 9, 'biscotte'], ['Galette de riz', 387, 8, 81, 3, 3, 18, 9, 'galette'],
+  ['Œuf', 140, 12.5, 0.7, 9.8, 0, 50, 50, 'œuf'], ['Blanc d’œuf', 48, 10.5, 0.7, 0.2, 0, 30, 30, 'blanc'],
+  ['Blanc de poulet cuit', 155, 30, 0, 3.5, 0, 150], ['Blanc de dinde cuit', 140, 29, 0, 2, 0, 120], ['Steak haché 5 % MG cuit', 170, 26, 0, 7.5, 0, 100, 100, 'steak'],
+  ['Steak haché 15 % MG cuit', 220, 24, 0, 14, 0, 100, 100, 'steak'], ['Bœuf grillé (bavette, rumsteck)', 170, 28, 0, 6.5, 0, 150], ['Filet mignon de porc cuit', 160, 28, 0, 5, 0, 150],
+  ['Jambon blanc', 115, 21, 0.8, 3, 0, 45, 45, 'tranche'], ['Saumon cuit', 206, 22, 0, 13, 0, 130], ['Thon au naturel', 116, 26, 0, 1, 0, 100],
+  ['Cabillaud cuit', 90, 20, 0, 0.9, 0, 150], ['Crevettes cuites', 95, 21, 0, 1.3, 0, 100], ['Tofu nature', 120, 13, 1.5, 7, 1, 100],
+  ['Lait demi-écrémé', 46, 3.3, 4.8, 1.6, 0, 250], ['Lait écrémé', 34, 3.4, 4.9, 0.1, 0, 250], ['Lait entier', 65, 3.3, 4.7, 3.6, 0, 250],
+  ['Yaourt nature', 52, 4.2, 5, 1.5, 0, 125, 125, 'pot'], ['Skyr nature', 60, 11, 4, 0.2, 0, 150], ['Yaourt grec', 120, 5, 4, 9.5, 0, 150],
+  ['Fromage blanc 0 %', 47, 7.5, 4, 0.2, 0, 100], ['Fromage blanc 3 %', 75, 7, 4, 3, 0, 100], ['Emmental', 380, 28, 0.5, 29.5, 0, 30],
+  ['Comté', 410, 27, 0.5, 33, 0, 30], ['Mozzarella', 240, 18, 1, 18, 0, 60], ['Camembert', 280, 20, 0.5, 22, 0, 30], ['Feta', 260, 15, 1, 21, 0, 30],
+  ['Beurre', 745, 0.7, 0.6, 82, 0, 10], ['Crème fraîche 15 %', 160, 2.5, 4, 15, 0, 30], ['Huile d’olive', 900, 0, 0, 100, 0, 10, 10, 'c. à soupe'],
+  ['Huile de colza', 900, 0, 0, 100, 0, 10, 10, 'c. à soupe'], ['Chocolat noir 70 %', 570, 7.8, 32, 42, 11, 20, 5, 'carré'], ['Chocolat au lait', 545, 7, 56, 31, 2, 20, 5, 'carré'],
+  ['Miel', 320, 0.4, 80, 0, 0, 15, 15, 'c. à soupe'], ['Confiture', 250, 0.4, 62, 0, 1, 20], ['Sucre', 400, 0, 100, 0, 0, 5, 5, 'morceau'],
+  ['Jus d’orange', 45, 0.7, 9.5, 0.2, 0.3, 200], ['Bière', 40, 0.4, 3, 0, 0, 250], ['Vin rouge', 85, 0.1, 0.5, 0, 0, 125]
+];
+const BASE_FOODS = BASE_RAW.map(([name, kcal, p, c, f, fib, serving, piece, unit]) => ({ name, per: { kcal, p, c, f, fib }, serving, piece, unit, base: true }));
+// Recherche : sans accents, chaque mot doit correspondre ; quelques équivalents anglais pour les aliments importés de MacroFactor
+const norm = t => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/œ/g, 'oe').replace(/[^a-z0-9%]+/g, ' ').trim();
+const SYN = { banane: 'banana', amande: 'almond', pomme: 'apple', oeuf: 'egg', poulet: 'chicken', riz: 'rice', lait: 'milk', fromage: 'cheese', pain: 'bread', avoine: 'oat', noix: 'walnut', pates: 'pasta', saumon: 'salmon', thon: 'tuna', boeuf: 'beef', poire: 'pear', fraise: 'strawberr', framboise: 'raspberr', myrtille: 'blueberr', raisin: 'grape', carotte: 'carrot', tomate: 'tomato', brocoli: 'broccoli', epinard: 'spinach', champignon: 'mushroom', yaourt: 'yogurt', patate: 'potato', dinde: 'turkey', crevette: 'shrimp', chocolat: 'chocolate', miel: 'honey', beurre: 'butter', huile: 'oil', graine: 'seed', noisette: 'hazelnut', cacahuete: 'peanut', haricot: 'bean', lentille: 'lentil', avocat: 'avocado', concombre: 'cucumber', oignon: 'onion', poireau: 'leek', clementine: 'clementine', peche: 'peach', cerise: 'cherr', ananas: 'pineapple', mangue: 'mango', cabillaud: 'cod', jambon: 'ham', sucre: 'sugar', jus: 'juice', biere: 'beer', vin: 'wine' };
+function matchScore(name, q) {
+  const n = norm(name), words = norm(q).split(' ').filter(Boolean); if (!words.length) return 0;
+  const nw = n.split(' ');
+  let score = 0;
+  for (const w of words) {
+    const stem = w.replace(/s$/, ''), syn = SYN[stem] || SYN[w];
+    const hit = x => x && (nw.some(t => t.startsWith(x)) ? 1 : n.includes(x) ? 2 : 0);
+    const h = Math.min(...[hit(w), hit(stem), hit(syn)].filter(Boolean).concat([9]));
+    if (h === 9) return null;
+    score += h;
+  }
+  if (n === norm(q) || n.replace(/s$/, '') === norm(q).replace(/s$/, '')) score -= 3;
+  else if (n.startsWith(norm(q))) score -= 1;
+  return score + nw.length * 0.15 + n.length * 0.005;   // les noms courts (aliment brut) d'abord
+}
+function rankFoods(list, q, max = 30) {
+  if (!q) return list.slice(0, max);
+  return list.map(f => [f, matchScore(f.name, q)]).filter(x => x[1] !== null).sort((a, b) => a[1] - b[1]).slice(0, max).map(x => x[0]);
+}
+
 function openSearch() {
   openSheet(`<h3>Rechercher un aliment</h3>
-    <div class="row"><input id="q" placeholder="ex. skyr, flocons d'avoine…" enterkeyhint="search"><button class="btn pri" id="qGo">OK</button></div>
-    <div id="res" style="margin-top:8px"></div><p><button class="btn" id="close">Fermer</button></p>`);
-  $('#close').onclick = closeSheet;
-  let pool = { mine: S.foods, rec: recentFoods(), off: [], rcp: ingDraft ? [] : S.recipes };
-  const show = (q) => {
-    const ql = (q || '').toLowerCase();
-    const mine = pool.mine.filter(f => !ql || f.name.toLowerCase().includes(ql));
-    const rec = pool.rec.filter(f => !ql || f.name.toLowerCase().includes(ql));
-    let h = '';
-    const rcp = pool.rcp.filter(r => !ql || r.name.toLowerCase().includes(ql));
-    if (rcp.length) h += `<label>Mes recettes</label>` + rcp.map(r => recipeItem(r, pool.rcp.indexOf(r))).join('');
-    if (mine.length) h += `<label style="margin-top:8px">Mes aliments</label>` + mine.map(f => foodItem(f, pool.mine.indexOf(f), 'mine')).join('');
-    if (rec.length) h += `<label style="margin-top:8px">Récents</label>` + rec.map(f => foodItem(f, pool.rec.indexOf(f), 'rec')).join('');
-    if (pool.off.length) h += `<label style="margin-top:8px">Open Food Facts</label>` + pool.off.map((f, i) => foodItem(f, i, 'off')).join('');
-    $('#res').innerHTML = h || '<p class="mute">Rien pour l’instant. Lance une recherche.</p>';
-    document.querySelectorAll('#res .it').forEach(el => el.onclick = () => el.dataset.src === 'rcp' ? openRecipeLog(pool.rcp[+el.dataset.i]) : openQty(pool[el.dataset.src][+el.dataset.i]));
+    <input id="q" type="search" placeholder="ex. banane, skyr, flocons d’avoine…" enterkeyhint="search" autocomplete="off">
+    <div id="res" style="margin-top:8px"></div>`);
+  const pool = { base: BASE_FOODS, mine: S.foods, rec: recentFoods(400, 365), off: [], rcp: ingDraft ? [] : S.recipes };
+  let shown = {}, offQ = '', timer = null, ctrl = null, seq = 0;
+  const show = () => {
+    const q = $('#q').value.trim();
+    shown = { rcp: rankFoods(pool.rcp, q, 5), base: q ? rankFoods(pool.base, q, 8) : [], mine: rankFoods(pool.mine, q, q ? 8 : 20), rec: rankFoods(pool.rec, q, q ? 8 : 12), off: q && offQ === q ? rankFoods(pool.off, q, 25) : [] };
+    const sec = (title, key, fn) => shown[key].length ? `<label style="margin-top:10px">${title}</label>` + shown[key].map((f, i) => fn(f, i, key)).join('') : '';
+    let h = sec('Mes recettes', 'rcp', (r, i) => recipeItem(r, i)) + sec('Aliments de base', 'base', foodItem) + sec('Mes aliments', 'mine', foodItem) + sec('Récents', 'rec', foodItem) + sec('Open Food Facts', 'off', foodItem);
+    if (q && q.length >= 3 && offQ !== q) h += '<p class="mute" id="ld">Recherche dans Open Food Facts…</p>';
+    $('#res').innerHTML = h || (q ? '<p class="mute">Aucun résultat.</p>' : '<p class="mute">Tape le nom d’un aliment.</p>');
+    document.querySelectorAll('#res .it').forEach(el => el.onclick = () => el.dataset.src === 'rcp' ? openRecipeLog(shown.rcp[+el.dataset.i]) : openQty(shown[el.dataset.src][+el.dataset.i]));
   };
-  const go = async () => {
-    const q = $('#q').value.trim(); if (!q) return show('');
-    show(q); $('#res').insertAdjacentHTML('beforeend', '<p class="mute" id="ld">Recherche Open Food Facts…</p>');
+  const searchOFF = async q => {
+    if (ctrl) ctrl.abort(); ctrl = new AbortController(); const my = ++seq;
     try {
-      const u = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=25&lc=fr&cc=fr&fields=${OFF_FIELDS}`;
-      const j = await (await fetch(u)).json();
-      pool.off = (j.products || []).map(offToFood).filter(f => f.per.kcal != null);
-      show(q);
-    } catch (e) { const l = $('#ld'); if (l) l.textContent = 'Recherche en ligne impossible (' + e.message + ')'; }
+      const u = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=40&lc=fr&cc=fr&fields=${OFF_FIELDS}`;
+      const j = await (await fetch(u, { signal: ctrl.signal })).json();
+      if (my !== seq) return;
+      pool.off = (j.products || []).map(offToFood).filter(f => f.per.kcal != null); offQ = q; show();
+    } catch (e) { if (e.name !== 'AbortError' && my === seq) { const l = $('#ld'); if (l) l.textContent = 'Recherche en ligne impossible pour le moment.'; } }
   };
-  $('#qGo').onclick = go; $('#q').onkeydown = e => { if (e.key === 'Enter') go(); };
-  show(''); setTimeout(() => $('#q').focus(), 50);
+  $('#q').oninput = () => {
+    show(); clearTimeout(timer);
+    const q = $('#q').value.trim();
+    if (q.length >= 3) timer = setTimeout(() => searchOFF(q), 450); else if (ctrl) ctrl.abort();
+  };
+  $('#q').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); $('#q').blur(); } };
+  show(); setTimeout(() => $('#q') && $('#q').focus(), 50);
 }
 
 function offToFood(p) {
@@ -657,13 +724,14 @@ function offToFood(p) {
 
 function openQty(food, editIndex) {
   const e = editIndex != null ? S.days[cur].entries[editIndex] : null;
-  const g0 = e ? e.grams : (food.serving || 100);
+  const g0 = e ? e.grams : (food.piece || food.serving || 100);
   const isMine = S.foods.some(f => f.name === food.name);
   openSheet(`<h3>${esc(food.name)}</h3>
     <div class="mute">Pour 100 g : ${r0(food.per.kcal)} kcal · P ${r1(food.per.p)} · G ${r1(food.per.c)} · L ${r1(food.per.f)} · Fibres ${food.per.fib == null ? '?' : r1(food.per.fib)}</div>
     <div class="grid2" style="margin:10px 0"><div><label>Quantité (g)</label><input id="g" type="number" inputmode="decimal" value="${r1(g0)}"></div><div><label>Repas</label>${mealSelect(e ? e.meal : null)}</div></div>
     <div class="grid2" style="margin:-2px 0 10px">${timeInput(e ? entryTime(e) : defaultTime(pendingMeal || MEALS[defaultMeal()]))}<div></div></div>
-    ${food.serving ? `<div class="row wrap" style="margin-bottom:8px"><button class="btn sm" data-g="${food.serving}">1 portion (${r0(food.serving)} g)</button><button class="btn sm" data-g="${food.serving * 2}">2 portions</button><button class="btn sm" data-g="100">100 g</button></div>` : ''}
+    ${food.piece ? `<div class="row wrap" style="margin-bottom:8px">${(food.piece < 15 ? [1, 5, 10, 20] : [1, 2, 3]).map(n => `<button class="btn sm" data-g="${r1(food.piece * n)}">${n} ${esc(food.unit || 'pièce')}${n > 1 && !/s$/.test(food.unit || '') && !/^c\. à/.test(food.unit || '') ? 's' : ''} (${food.piece * n < 10 ? r1(food.piece * n) : r0(food.piece * n)} g)</button>`).join('')}<button class="btn sm" data-g="100">100 g</button></div>` : ''}
+    ${food.serving && !food.piece ? `<div class="row wrap" style="margin-bottom:8px"><button class="btn sm" data-g="${food.serving}">1 portion (${r0(food.serving)} g)</button><button class="btn sm" data-g="${food.serving * 2}">2 portions</button><button class="btn sm" data-g="100">100 g</button></div>` : ''}
     <div id="calc" class="card"></div>
     ${isMine ? '' : `<label class="row" style="color:var(--ink);font-size:14px"><input type="checkbox" id="keep"> Ajouter à mes aliments</label>`}
     <div class="row" style="margin-top:10px"><button class="btn pri" id="ok">${e ? 'Enregistrer' : 'Ajouter'}</button>${e ? '<button class="btn danger" id="del">Supprimer</button>' : ''}<button class="btn" id="cancel">Annuler</button></div>`);
