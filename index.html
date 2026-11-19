@@ -29,6 +29,18 @@ nav button{flex:1;padding:9px 0 11px;border:0;background:none;color:var(--mute);
 nav button svg{width:23px;height:23px}
 nav button.on{color:var(--ink);font-weight:700}
 nav button.on svg{stroke:var(--acc)}
+.ck{width:36px;height:36px;flex:none;border-radius:50%;border:2px solid var(--line);display:flex;align-items:center;justify-content:center;color:transparent;font-weight:800;font-size:17px}
+.entry.on .ck{background:var(--acc);border-color:var(--acc);color:#fff}
+.entry.on{background:color-mix(in srgb,var(--acc) 7%,transparent);margin:0 -16px;padding-left:16px;padding-right:16px}
+.entry{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+#selbar{position:fixed;left:0;right:0;bottom:0;z-index:8;background:var(--card);border-top:1px solid var(--line);box-shadow:0 -6px 20px rgba(0,0,0,.08);padding:10px 12px calc(12px + env(safe-area-inset-bottom));display:none}
+#selbar.on{display:block}
+#selbar .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-weight:700}
+#selbar .acts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+#selbar .acts .btn{padding:11px 4px;font-size:14px}
+body.selmode nav,body.selmode #fab{display:none!important}
+body.selmode{padding-bottom:130px}
+.jtools{display:flex;gap:4px;flex-wrap:wrap}
 #fab{position:fixed;right:18px;bottom:80px;width:58px;height:58px;border-radius:50%;border:0;background:var(--acc);color:#fff;box-shadow:0 8px 24px rgba(59,130,246,.45);z-index:7;display:flex;align-items:center;justify-content:center}
 #fab svg{width:28px;height:28px}
 button{font:inherit;cursor:pointer}
@@ -86,7 +98,7 @@ label{font-size:12px;font-weight:500;color:var(--mute);display:block;margin-bott
 .e-right b{font-size:15px}
 .chips{display:flex;gap:7px;font-size:11.5px;font-weight:600;justify-content:flex-end;margin-top:2px}
 .wcard2{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;padding:12px 16px}
-.pill-in.sm{width:92px}
+.pill-in.sm{width:104px}.pill-in.sm input{font-size:16px;padding-left:8px}
 .meas{display:grid;grid-template-columns:1fr 92px;gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--line)}
 .meas input{padding:8px;text-align:right}
 .remind{border-left:4px solid var(--acc)}
@@ -150,6 +162,8 @@ tr:last-child td{border-bottom:0}
   <button data-tab="reglages"></button>
 </nav>
 <button id="fab" aria-label="Ajouter"></button>
+<div id="selbar"><div class="top"><span id="selCount"></span><span class="row" style="gap:6px"><button class="btn sm" id="selAll">Tout</button><button class="btn sm" id="selCancel">Annuler</button></span></div>
+  <div class="acts"><button class="btn danger" id="selDel">Supprimer</button><button class="btn" id="selCopy">Copier…</button><button class="btn pri" id="selMove">Déplacer…</button></div></div>
 <div class="sheet" id="sheet"><div class="sheetbox"><button class="sx" id="sx" aria-label="Fermer">×</button><div id="sheetIn"></div></div></div>
 <div class="toast" id="toast"></div>
 <input type="file" id="fileJson" accept="application/json,.json" hidden>
@@ -452,6 +466,7 @@ function optimize() {
 }
 
 /* ===================== Interface ===================== */
+let selMode = false, sel = new Set(), justLong = false;
 let tab = 'journal', cur = today(), stream = null, scanning = false, pendingMeal = null, ingDraft = null;
 const ic = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
 const IC = {
@@ -473,6 +488,7 @@ function render() {
   document.querySelectorAll('nav button').forEach(b => { b.classList.toggle('on', b.dataset.tab === tab); b.innerHTML = IC[b.dataset.tab] + TABS[b.dataset.tab]; });
   const dated = tab === 'journal' || tab === 'poids';
   $('#todayBtn').style.display = dated && cur !== today() ? 'block' : 'none';
+  if (tab !== 'journal' && selMode) exitSel(false);
   $('#fab').style.display = tab === 'journal' ? 'flex' : 'none';
   $('#title').textContent = tab === 'journal' ? fmtDate(cur) : TABS[tab];
   ({ journal: renderJournal, poids: renderPoids, depense: renderDepense, reglages: renderReglages })[tab]();
@@ -490,8 +506,8 @@ function weekStrip() {
   return h + `<button class="wk-nav" data-wk="7">›</button></div>`;
 }
 function bindWeek() {
-  document.querySelectorAll('[data-day]').forEach(b => b.onclick = () => { cur = b.dataset.day; render(); });
-  document.querySelectorAll('[data-wk]').forEach(b => b.onclick = () => { cur = addDays(cur, +b.dataset.wk); render(); });
+  document.querySelectorAll('[data-day]').forEach(b => b.onclick = () => { if (selMode) exitSel(false); cur = b.dataset.day; render(); });
+  document.querySelectorAll('[data-wk]').forEach(b => b.onclick = () => { if (selMode) exitSel(false); cur = addDays(cur, +b.dataset.wk); render(); });
 }
 function ring(v, max, color, size, sw) {
   const r = (size - sw) / 2, C = 2 * Math.PI * r, p = max > 0 ? Math.min(1, v / max) : 0, c = size / 2;
@@ -517,8 +533,9 @@ function renderJournal() {
     <div class="pill-in sm"><input id="bfIn" type="number" step="0.1" inputmode="decimal" placeholder="—" value="${d && d.bf != null ? d.bf : ''}"><span class="mute">%</span></div></div>${updateCard()}${reminderCard()}<!--FIB-->`;
   const chipsOf = list => { const t2 = { kcal: 0, p: 0, c: 0, f: 0 }; for (const [e] of list) for (const x in t2) t2[x] += +e[x] || 0; return t2; };
   const head = (title, list, menu) => { const tt = chipsOf(list); return `<div class="meal"><div class="meal-h"><span>${title}</span><span class="row" style="gap:10px">${list.length ? `<span class="mh-tot"><b>${r0(tt.kcal)}</b> kcal<span class="chips"><span style="color:var(--p)">${r0(tt.p)}P</span><span style="color:var(--f)">${r0(tt.f)}L</span><span style="color:var(--c)">${r0(tt.c)}G</span></span></span>` : ''}${menu && list.length ? `<button class="mbtn" data-mm="${esc(menu)}" aria-label="Options du repas">⋯</button>` : ''}</span></div><div class="card list">`; };
-  const row = (e, i, sub) => `<div class="entry" data-i="${i}"><div class="irow">${fi(e.name, !!e.recipeId)}<div><div class="e-name">${esc(e.name)}</div><div class="mute xs">${sub}${e.grams ? r0(e.grams) + ' g' : 'portion'}${e.src === 'photo' ? ' · photo IA' : e.src === 'describe' ? ' · décrit (IA)' : ''}</div></div></div>
+  const row = (e, i, sub) => `<div class="entry${selMode && sel.has(e.id) ? ' on' : ''}" data-i="${i}" data-id="${esc(e.id)}"><div class="irow">${selMode ? '<span class="ck">✓</span>' : fi(e.name, !!e.recipeId)}<div><div class="e-name">${esc(e.name)}</div><div class="mute xs">${sub}${e.grams ? r0(e.grams) + ' g' : 'portion'}${e.src === 'photo' ? ' · photo IA' : e.src === 'describe' ? ' · décrit (IA)' : ''}</div></div></div>
       <div class="e-right"><b>${r0(e.kcal)}</b> <span class="mute xs">kcal</span><div class="chips"><span style="color:var(--p)">${r0(e.p)}P</span><span style="color:var(--f)">${r0(e.f)}L</span><span style="color:var(--c)">${r0(e.c)}G</span></div></div></div>`;
+  if (d) for (const e of d.entries) if (!e.id) e.id = uid();
   const all = (d ? d.entries : []).map((e, i) => [e, i]).sort((a, b) => entryTime(a[0]).localeCompare(entryTime(b[0])));
   if (S.settings.journalView === 'heure') {
     const byH = {}; for (const x of all) (byH[entryTime(x[0]).slice(0, 2)] = byH[entryTime(x[0]).slice(0, 2)] || []).push(x);
@@ -536,7 +553,7 @@ function renderJournal() {
       h += `</div></div>`;
     }
   }
-  if (d && d.entries.length) h += `<button class="add-in" id="copyDay" style="padding-left:6px">Copier toute la journée vers…</button>`;
+  if (d && d.entries.length) h += `<div class="jtools"><button class="add-in" id="selStart" style="padding-left:6px;width:auto">Sélectionner…</button><button class="add-in" id="copyDay" style="width:auto">Copier toute la journée…</button></div>`;
   h = h.replace('<!--FIB-->', fiberCard(t, T));
   $('#main').innerHTML = h + '<div style="height:60px"></div>';
   bindWeek();
@@ -547,7 +564,20 @@ function renderJournal() {
   $('#bfIn').onchange = e => { const v = num(e.target.value); day(cur).bf = v; save(); toast(v == null ? 'Masse grasse effacée' : 'Masse grasse enregistrée'); render(); };
   if ($('#doUpd')) $('#doUpd').onclick = doUpdate;
   if ($('#goMeas')) $('#goMeas').onclick = () => { tab = 'poids'; cur = today(); render(); setTimeout(() => { const el = document.getElementById('measCard'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }, 50); };
-  document.querySelectorAll('.entry').forEach(el => el.onclick = () => openEdit(+el.dataset.i));
+  document.querySelectorAll('.entry').forEach(el => {
+    let tmr = null, x0 = 0, y0 = 0;
+    el.addEventListener('pointerdown', ev => { justLong = false; x0 = ev.clientX; y0 = ev.clientY; clearTimeout(tmr); tmr = setTimeout(() => { justLong = true; if (navigator.vibrate) navigator.vibrate(30); if (!selMode) { selMode = true; sel = new Set(); } sel.add(el.dataset.id); render(); }, 480); });
+    el.addEventListener('pointermove', ev => { if (Math.abs(ev.clientX - x0) + Math.abs(ev.clientY - y0) > 10) clearTimeout(tmr); });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => el.addEventListener(t, () => clearTimeout(tmr)));
+    el.addEventListener('contextmenu', ev => ev.preventDefault());
+    el.onclick = () => {
+      if (justLong) { justLong = false; return; }
+      if (selMode) { const id = el.dataset.id; sel.has(id) ? sel.delete(id) : sel.add(id); if (!sel.size) return exitSel(); render(); }
+      else openEdit(+el.dataset.i);
+    };
+  });
+  if ($('#selStart')) $('#selStart').onclick = () => { selMode = true; sel = new Set(); render(); };
+  updSelBar();
   document.querySelectorAll('[data-meal]').forEach(b => b.onclick = () => openAdd(b.dataset.meal));
 }
 function openAdd(meal) {
@@ -906,6 +936,66 @@ Réponds UNIQUEMENT avec un objet JSON, sans texte autour : {"nom":"…","portio
     } catch (e) { $('#aiRes').innerHTML = `<p style="color:var(--danger)">Échec : ${esc(e.message)}</p>`; }
   };
 }
+/* ---------- Sélection multiple ---------- */
+function exitSel(rerender = true) { selMode = false; sel = new Set(); justLong = false; updSelBar(); if (rerender) render(); }
+function updSelBar() {
+  const bar = document.getElementById('selbar'); if (!bar) return;
+  bar.classList.toggle('on', selMode); document.body.classList.toggle('selmode', selMode);
+  if (!selMode) return;
+  const list = selEntries(), kc = list.reduce((a, e) => a + (+e.kcal || 0), 0);
+  $('#selCount').textContent = list.length ? `${list.length} sélectionné${list.length > 1 ? 's' : ''} · ${r0(kc)} kcal` : 'Touche les aliments à sélectionner';
+  const del = $('#selDel'); del.textContent = 'Supprimer'; del.dataset.confirm = '';
+  ['selDel', 'selCopy', 'selMove'].forEach(id => $('#' + id).disabled = !list.length);
+}
+const selEntries = () => ((S.days[cur] && S.days[cur].entries) || []).filter(e => sel.has(e.id));
+function selFields(withDay, dayDefault) {
+  return `${withDay ? `<div class="row wrap" style="margin-bottom:10px">${[[today(), "Aujourd'hui"], [addDays(today(), 1), 'Demain'], [addDays(today(), -1), 'Hier']].map(([k, l]) => `<button class="btn sm" data-dk="${k}">${l}</button>`).join('')}</div>` : ''}
+    <div class="grid2"><div><label>Jour</label><input type="date" id="sDate" value="${dayDefault}"></div>
+    <div><label>Repas</label><select id="sMeal"><option value="">Inchangé</option>${MEALS.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join('')}</select></div>
+    <div><label>Heure</label><input type="time" id="sTime"></div><div style="align-self:end" class="mute xs">Vide = heure inchangée</div></div>`;
+}
+function bindSelFields() { document.querySelectorAll('[data-dk]').forEach(b => b.onclick = () => $('#sDate').value = b.dataset.dk); }
+function readSelFields() {
+  const k = $('#sDate').value; if (!/^\d{4}-\d{2}-\d{2}$/.test(k)) { toast('Choisis une date'); return null; }
+  return { k, meal: $('#sMeal').value || null, time: $('#sTime').value || null };
+}
+function openSelCopy() {
+  const list = selEntries(); if (!list.length) return;
+  openSheet(`<h3>Copier ${list.length} aliment${list.length > 1 ? 's' : ''}</h3>${selFields(true, cur < today() ? today() : addDays(cur, 1))}
+    <div class="row" style="margin-top:12px"><button class="btn pri" id="ok">Copier</button><button class="btn" id="cancel">Annuler</button></div>`);
+  bindSelFields(); $('#cancel').onclick = closeSheet;
+  $('#ok').onclick = () => {
+    const f = readSelFields(); if (!f) return;
+    const dd = day(f.k);
+    for (const e of list) { const c = cloneEntry(e, f.meal); if (f.time) c.time = f.time; dd.entries.push(c); }
+    save(); exitSel(false); closeSheet(); toast(`${list.length} copié${list.length > 1 ? 's' : ''} vers ${fmtDate(f.k).toLowerCase()}`);
+  };
+}
+function openSelMove() {
+  const list = selEntries(); if (!list.length) return;
+  openSheet(`<h3>Déplacer ${list.length} aliment${list.length > 1 ? 's' : ''}</h3>
+    <p class="mute" style="margin-top:0">Change l’heure, le repas ou le jour des aliments sélectionnés.</p>${selFields(true, cur)}
+    <div class="row" style="margin-top:12px"><button class="btn pri" id="ok">Déplacer</button><button class="btn" id="cancel">Annuler</button></div>`);
+  bindSelFields(); $('#cancel').onclick = closeSheet;
+  $('#ok').onclick = () => {
+    const f = readSelFields(); if (!f) return;
+    if (f.k === cur && !f.meal && !f.time) return toast('Choisis une heure, un repas ou un autre jour');
+    const src = S.days[cur];
+    for (const e of list) {
+      if (f.meal) e.meal = f.meal;
+      if (f.time) e.time = f.time; else if (f.meal && !e.time) e.time = MEAL_HOUR[f.meal];
+    }
+    if (f.k !== cur) { src.entries = src.entries.filter(e => !sel.has(e.id)); day(f.k).entries.push(...list); }
+    save(); exitSel(false); closeSheet(); toast(`${list.length} déplacé${list.length > 1 ? 's' : ''}${f.k !== cur ? ' vers ' + fmtDate(f.k).toLowerCase() : ''}`);
+  };
+}
+function selDelete() {
+  const b = $('#selDel'), list = selEntries(); if (!list.length) return;
+  if (!b.dataset.confirm) { b.dataset.confirm = '1'; b.textContent = `Confirmer (${list.length})`; return; }
+  S.days[cur].entries = S.days[cur].entries.filter(e => !sel.has(e.id));
+  save(); toast(`${list.length} supprimé${list.length > 1 ? 's' : ''}`); exitSel();
+}
+
 /* ---------- Copier, repas habituels ---------- */
 function cloneEntry(e, meal) { const { id, ...rest } = e; const c = { ...JSON.parse(JSON.stringify(rest)), id: uid(), meal: meal || e.meal }; if (meal && meal !== e.meal || !c.time) c.time = MEAL_HOUR[c.meal] || '12:00'; return c; }
 function addEntries(list, meal, k = cur) { const d = day(k); for (const e of list) d.entries.push(cloneEntry(e, meal)); save(); }
@@ -1404,7 +1494,10 @@ function bindSettings() {
 /* ===================== Démarrage ===================== */
 if (typeof document !== 'undefined' && document.getElementById('main')) {
   document.querySelectorAll('nav button').forEach(b => b.onclick = () => { tab = b.dataset.tab; render(); window.scrollTo(0, 0); });
-  $('#todayBtn').onclick = () => { cur = today(); render(); };
+  $('#todayBtn').onclick = () => { if (selMode) exitSel(false); cur = today(); render(); };
+  $('#selCancel').onclick = () => exitSel();
+  $('#selAll').onclick = () => { const es = (S.days[cur] && S.days[cur].entries) || []; sel = sel.size === es.length ? new Set() : new Set(es.map(e => e.id)); render(); };
+  $('#selDel').onclick = selDelete; $('#selCopy').onclick = openSelCopy; $('#selMove').onclick = openSelMove;
   $('#fab').innerHTML = IC.plus; $('#fab').onclick = () => openAdd(null);
   $('#sheet').onclick = e => { if (e.target.id === 'sheet') { if (sheetMode === 'editor') ingDraft = null; closeSheet(); } };
   $('#sx').onclick = () => { if (sheetMode === 'editor') ingDraft = null; closeSheet(); };
