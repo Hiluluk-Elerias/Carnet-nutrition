@@ -101,7 +101,12 @@ textarea{min-height:110px;resize:vertical;font-size:15px}
 .sheet>div{background:var(--card);width:100%;max-width:640px;max-height:92vh;overflow:auto;border-radius:24px 24px 0 0;padding:8px 18px 28px;animation:up .22s ease-out}
 @keyframes up{from{transform:translateY(30px);opacity:.4}to{transform:none;opacity:1}}
 .grab{width:40px;height:5px;border-radius:3px;background:var(--line);margin:4px auto 12px}
-.sheet h3{margin:2px 0 12px;font-size:20px;font-weight:800;letter-spacing:-.01em}
+.sheet h3{margin:2px 0 12px;font-size:20px;font-weight:800;letter-spacing:-.01em;padding-right:44px}
+.sheet>div{position:relative}
+.sx{position:absolute;top:14px;right:14px;width:36px;height:36px;border-radius:50%;border:0;background:var(--card2);color:var(--ink);font-size:22px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:2}
+.fi{width:36px;height:36px;flex:none;border-radius:11px;background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:19px;line-height:1}
+.irow{display:flex;align-items:center;gap:12px;min-width:0}
+.irow>div:last-child{min-width:0}
 .tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
 .tiles.t3{grid-template-columns:repeat(3,1fr)}
 .tile{border:0;background:var(--card2);color:var(--ink);border-radius:16px;padding:13px 2px 10px;display:flex;flex-direction:column;align-items:center;gap:7px;font-size:11px;font-weight:600}
@@ -155,6 +160,35 @@ const MEAS = [
   { k: 'bras', l: 'Bras', mf: 'right bicep' }, { k: 'avantbras', l: 'Avant-bras', mf: 'right forearm' }, { k: 'poignet', l: 'Poignet', mf: 'right wrist' },
   { k: 'cuisse', l: 'Cuisse', mf: 'right thigh' }, { k: 'mollet', l: 'Mollet', mf: 'right calf' }, { k: 'cheville', l: 'Cheville', mf: 'right ankle' }
 ];
+// Icône d'un aliment d'après son nom (français ou anglais), pour se repérer d'un coup d'œil
+const FOOD_ICONS = [
+  [/whey|prot[ée]ine en poudre|proteina|protein powder|isolat|casein/i, '💪'], [/psyllium|chia|graines?|seeds?|\blin\b|flax/i, '🌱'],
+  [/pomme de terre|patate|potato|frites?|fries|pur[ée]e/i, '🥔'], [/pain au chocolat|croissant|viennoiserie|brioche/i, '🥐'],
+  [/œuf|oeuf|\begg/i, '🥚'], [/banan/i, '🍌'], [/\bpommes?\b|apple|compote/i, '🍎'], [/poire|pear/i, '🍐'],
+  [/orange|cl[ée]mentine|mandarine|clementine/i, '🍊'], [/fraise|framboise|myrtille|berr|cassis|m[uû]re/i, '🍓'],
+  [/raisin|grape/i, '🍇'], [/kiwi/i, '🥝'], [/p[êe]che|abricot|prune|nectarine|peach|plum|apricot/i, '🍑'], [/melon|past[èe]que|cantaloupe/i, '🍈'],
+  [/mangue|mango|ananas|pineapple|passion/i, '🥭'], [/avocat|avocado/i, '🥑'], [/citron|lemon|lime/i, '🍋'],
+  [/skyr|yaourt|yogh?o?urt|fromage blanc|faisselle|petit suisse|fjord|quark/i, '🥛'], [/\blait\b|milk/i, '🥛'],
+  [/fromage|cheese|emmental|comt[ée]|mozzarella|feta|parmesan|camembert|ch[èe]vre/i, '🧀'], [/beurre|butter/i, '🧈'],
+  [/flocons?|avoine|oat|muesli|granola|porridge|c[ée]r[ée]ales|cereal/i, '🥣'],
+  [/riz|rice|risotto/i, '🍚'], [/p[âa]tes|pasta|spaghetti|penne|tagliatelle|macaroni|fusilli|nouilles|noodle|carbonara|lasagn/i, '🍝'],
+  [/pizza/i, '🍕'], [/burger/i, '🍔'], [/sandwich|wrap|panini|kebab|tacos?|burrito/i, '🥪'],
+  [/\bpain\b|bread|baguette|tranche|toast|biscotte|bagel/i, '🍞'],
+  [/poulet|chicken|dinde|turkey|volaille|kip\b/i, '🍗'], [/b[œo]euf|beef|steak|viande|hach[ée]|veau|agneau|porc|jambon|lardon|bacon|saucisse|sausage|ham\b/i, '🥩'],
+  [/poisson|fish|colin|saumon|salmon|thon|tuna|cabillaud|sardine|maquereau|crevette|shrimp|cod/i, '🐟'],
+  [/lentille|haricot|pois chiche|pois cass|bean|dahl|dal\b|chickpea|split pea|f[èe]ve/i, '🫘'],
+  [/soupe|soup|velout[ée]|curry|stew|rago[uû]t|chili|pot-au-feu/i, '🍲'], [/salade|salad/i, '🥗'],
+  [/carotte|carrot/i, '🥕'], [/tomate|tomato/i, '🍅'], [/brocoli|chou|courgette|haricots verts|[ée]pinard|l[ée]gume|vegetable|poireau|leek|champignon|mushroom|poivron|pepper|concombre|cucumber|aubergine|oignon|onion/i, '🥦'],
+  [/chocolat|choc|nutella|cacao|cocoa|m&m|snickers|kinder/i, '🍫'],
+  [/ma[ïi]s|corn/i, '🌽'], [/cacahu[èe]te|peanut|amande|almond|noix|nut|noisette|pistache|cajou|cashew/i, '🥜'],
+  [/biscuit|cookie|sabl[ée]|g[âa]teau sec|barre|bar\b|cracker/i, '🍪'],
+  [/g[âa]teau|cake|tarte|cr[êe]pe|gaufre|dessert|cr[èe]me|flan|pancake|muffin|brownie|glace|ice cream/i, '🍰'],
+  [/miel|honey|confiture|jam|sirop|sucre|sugar/i, '🍯'], [/huile|oil|olive|vinaigrette|mayonnaise|sauce/i, '🫒'],
+  [/caf[ée]|coffee|espresso|cappuccino/i, '☕'], [/th[ée]\b|tea\b|tisane|infusion/i, '🍵'], [/vin\b|wine|bi[èe]re|beer|cidre|ap[ée]ritif/i, '🍷'],
+  [/jus|juice|soda|coca|limonade|boisson|drink|smoothie/i, '🧃']
+];
+function foodIcon(name, isRecipe) { const n = String(name || ''); for (const [re, ic] of FOOD_ICONS) if (re.test(n)) return ic; return isRecipe ? '🍲' : '🍽️'; }
+const fi = (name, isRecipe) => `<span class="fi">${foodIcon(name, isRecipe)}</span>`;
 const DAYS_FR = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
 const OFF_FIELDS = 'code,product_name,product_name_fr,brands,nutriments,serving_quantity';
 
@@ -472,7 +506,7 @@ function renderJournal() {
     const list = (groups[m] || []).sort((a, b) => String(a[0].time || '').localeCompare(String(b[0].time || '')));
     const mk = list.reduce((s, [e]) => s + (+e.kcal || 0), 0);
     h += `<div class="meal"><div class="meal-h"><span>${esc(m)}</span><span class="row" style="gap:10px"><span class="mute">${list.length ? r0(mk) + ' kcal' : ''}</span>${list.length ? `<button class="mbtn" data-mm="${esc(m)}" aria-label="Options du repas">⋯</button>` : ''}</span></div><div class="card list">`;
-    for (const [e, i] of list) h += `<div class="entry" data-i="${i}"><div><div class="e-name">${esc(e.name)}</div><div class="mute xs">${e.grams ? r0(e.grams) + ' g' : 'portion'}${e.src === 'photo' ? ' · photo IA' : e.src === 'describe' ? ' · décrit (IA)' : ''}</div></div>
+    for (const [e, i] of list) h += `<div class="entry" data-i="${i}"><div class="irow">${fi(e.name, !!e.recipeId)}<div><div class="e-name">${esc(e.name)}</div><div class="mute xs">${e.grams ? r0(e.grams) + ' g' : 'portion'}${e.src === 'photo' ? ' · photo IA' : e.src === 'describe' ? ' · décrit (IA)' : ''}</div></div></div>
       <div class="e-right"><b>${r0(e.kcal)}</b> <span class="mute xs">kcal</span><div class="chips"><span style="color:var(--p)">${r0(e.p)}P</span><span style="color:var(--f)">${r0(e.f)}L</span><span style="color:var(--c)">${r0(e.c)}G</span></div></div></div>`;
     if (MEALS.includes(m)) h += `<button class="add-in" data-meal="${esc(m)}">+ Ajouter</button>`;
     h += `</div></div>`;
@@ -499,7 +533,7 @@ function openAdd(meal) {
   openSheet(`<h3>Ajouter${meal ? ' · ' + esc(meal) : ''}</h3>
     <div class="tiles t3"><button class="tile" id="tS">${IC.search}Rechercher</button><button class="tile" id="tB">${IC.scan}Scanner</button><button class="tile" id="tR">${IC.recipe}Recettes</button><button class="tile" id="tD">${IC.describe}Décrire</button><button class="tile" id="tP">${IC.photo}Photo IA</button><button class="tile" id="tM">${IC.manual}Manuel</button></div>
     ${yItems.length ? `<button class="chip" id="yday">↺ Comme hier · ${r0(yKcal)} kcal</button>` : ''}
-    ${S.meals.length ? `<label style="margin-top:18px">Repas habituels</label><div id="hab">${S.meals.map((m, i) => `<div class="it" data-i="${i}"><div>${esc(m.name)}</div><div class="mute">${m.items.length} aliment${m.items.length > 1 ? 's' : ''} · ${r0(m.items.reduce((s, e) => s + (+e.kcal || 0), 0))} kcal</div></div>`).join('')}</div>` : ''}
+    ${S.meals.length ? `<label style="margin-top:18px">Repas habituels</label><div id="hab">${S.meals.map((m, i) => `<div class="it irow" data-i="${i}"><span class="fi">⭐</span><div><div style="font-weight:600;font-size:14.5px">${esc(m.name)}</div><div class="mute">${m.items.length} aliment${m.items.length > 1 ? 's' : ''} · ${r0(m.items.reduce((s, e) => s + (+e.kcal || 0), 0))} kcal</div></div></div>`).join('')}</div>` : ''}
     ${rec.length ? `<label style="margin-top:18px">Récents</label><div id="rec">${rec.map((f, i) => foodItem(f, i, 'rec')).join('')}</div>` : ''}`);
   $('#tS').onclick = () => openSearch(); $('#tB').onclick = openScan; $('#tP').onclick = openPhoto; $('#tM').onclick = () => openManual(); $('#tR').onclick = openRecipes; $('#tD').onclick = openDescribe;
   if ($('#yday')) $('#yday').onclick = () => { addEntries(yItems, meal); closeSheet(); toast('Repas d’hier ajouté'); };
@@ -509,8 +543,9 @@ function openAdd(meal) {
 
 /* ---------- Feuilles (fenêtres du bas) ---------- */
 function openSheet(html) {
-  $('#sheetIn').innerHTML = '<div class="grab"></div>' + (ingDraft ? `<div class="mute xs" style="margin-bottom:6px">Ingrédient pour « ${esc(ingDraft.name || 'nouvelle recette')} »</div>` : '') + html;
+  $('#sheetIn').innerHTML = '<div class="grab"></div><button class="sx" id="sx" aria-label="Fermer">×</button>' + (ingDraft ? `<div class="mute xs" style="margin-bottom:6px">Ingrédient pour « ${esc(ingDraft.name || 'nouvelle recette')} »</div>` : '') + html;
   if (ingDraft && $('#meal')) $('#meal').parentElement.style.display = 'none';
+  $('#sx').onclick = closeSheet;
   $('#sheet').classList.add('on'); $('#sheetIn').scrollTop = 0;
 }
 function closeSheet() { stopCam(); if (ingDraft) return openRecipeEditor(); pendingMeal = null; $('#sheet').classList.remove('on'); render(); }
@@ -523,7 +558,7 @@ function recentFoods(limit = 20, daysBack = 45) {
   for (const k of ks) for (const e of S.days[k].entries) if (e.per && !seen.has(e.name)) seen.set(e.name, { name: e.name, per: e.per, serving: e.grams, code: e.code });
   return [...seen.values()].slice(0, limit);
 }
-function foodItem(f, i, src) { return `<div class="it" data-src="${src}" data-i="${i}"><div>${esc(f.name)}</div><div class="mute">${r0(f.per.kcal)} kcal · P ${r1(f.per.p)} · G ${r1(f.per.c)} · L ${r1(f.per.f)} / 100 g</div></div>`; }
+function foodItem(f, i, src) { return `<div class="it irow" data-src="${src}" data-i="${i}">${fi(f.name)}<div><div style="font-weight:600;font-size:14.5px">${esc(f.name)}</div><div class="mute">${r0(f.per.kcal)} kcal · P ${r1(f.per.p)} · G ${r1(f.per.c)} · L ${r1(f.per.f)} / 100 g</div></div></div>`; }
 
 function openSearch() {
   openSheet(`<h3>Rechercher un aliment</h3>
@@ -633,7 +668,7 @@ const itemVals = it => it.per && it.grams ? scale(it.per, it.grams) : { kcal: +i
 function recipeTotals(r) { const t = { kcal: 0, p: 0, c: 0, f: 0, fib: 0 }; for (const it of r.items) { const v = itemVals(it); for (const x in t) t[x] += v[x]; } return t; }
 function recipeWeight(r) { if (r.cooked > 0) return +r.cooked; if (r.items.length && r.items.every(it => it.grams > 0)) return r.items.reduce((s, it) => s + +it.grams, 0); return null; }
 function recipePortion(r) { const t = recipeTotals(r), n = Math.max(1, +r.portions || 1), o = {}; for (const x in t) o[x] = t[x] / n; return o; }
-function recipeItem(r, i) { const v = recipePortion(r); return `<div class="it" data-src="rcp" data-i="${i}"><div>${esc(r.name)}</div><div class="mute">${r0(v.kcal)} kcal / portion · P ${r0(v.p)} · L ${r0(v.f)} · G ${r0(v.c)}${r.portions > 1 ? ' · ' + r.portions + ' portions' : ''}</div></div>`; }
+function recipeItem(r, i) { const v = recipePortion(r); return `<div class="it irow" data-src="rcp" data-i="${i}">${fi(r.name, true)}<div><div style="font-weight:600;font-size:14.5px">${esc(r.name)}</div><div class="mute">${r0(v.kcal)} kcal / portion · P ${r0(v.p)} · L ${r0(v.f)} · G ${r0(v.c)}${r.portions > 1 ? ' · ' + r.portions + ' portions' : ''}</div></div></div>`; }
 function openRecipes() {
   ingDraft = null;
   openSheet(`<h3>Mes recettes</h3>
@@ -671,7 +706,7 @@ function addIngredient(entry) {
 }
 function openRecipeEditor() {
   const r = ingDraft, t = recipeTotals(r), W = recipeWeight(r), n = Math.max(1, +r.portions || 1);
-  $('#sheetIn').innerHTML = `<div class="grab"></div><h3>${r.isNew ? 'Nouvelle recette' : 'Modifier la recette'}</h3>
+  $('#sheetIn').innerHTML = `<div class="grab"></div><button class="sx" id="sx" aria-label="Fermer">×</button><h3>${r.isNew ? 'Nouvelle recette' : 'Modifier la recette'}</h3>
     <label>Nom</label><input id="rName" value="${esc(r.name)}" placeholder="ex. Riz sauté aux légumes">
     <div class="grid2" style="margin-top:8px"><div><label>Nombre de portions</label><input id="rPort" type="number" step="1" inputmode="numeric" value="${n}"></div>
       <div><label>Poids cuit total (g, facultatif)</label><input id="rCook" type="number" inputmode="decimal" value="${r.cooked || ''}" placeholder="${W && !r.cooked ? r0(W) + ' (cru)' : ''}"></div></div>
@@ -690,6 +725,7 @@ function openRecipeEditor() {
   document.querySelectorAll('[data-ix]').forEach(el => el.onclick = () => { r.items.splice(+el.dataset.ix, 1); openRecipeEditor(); });
   $('#iS').onclick = () => openSearch(); $('#iB').onclick = openScan; $('#iM').onclick = () => openManual(); $('#iT').onclick = openRecipeImport;
   $('#rCancel').onclick = () => { ingDraft = null; openRecipes(); };
+  $('#sx').onclick = () => { ingDraft = null; closeSheet(); };
   if ($('#rDel')) $('#rDel').onclick = () => {
     $('#rDel').outerHTML = '<button class="btn danger" id="rDel2">Confirmer la suppression</button>';
     $('#rDel2').onclick = () => { S.recipes = S.recipes.filter(x => x.id !== r.id); ingDraft = null; save(); openRecipes(); toast('Recette supprimée'); };
@@ -886,7 +922,7 @@ function fiberCard(t, T) {
   FIB_IDEAS = [...pool.values()].filter(f => gain(f) >= 2).sort((a, b) => b.per.fib / b.per.kcal - a.per.fib / a.per.kcal).slice(0, 3);
   if (!FIB_IDEAS.length) return '';
   return `<div class="card fibcard"><div style="font-weight:700">Fibres : il en manque ${r0(miss)} g</div><div class="mute xs">Parmi tes aliments, les plus riches en fibres pour peu de calories</div>
-    ${FIB_IDEAS.map((f, i) => { const g = f.serving || 100; return `<div class="it" data-fib="${i}"><div><div style="font-weight:600">${esc(f.name)}</div><div class="mute xs">${r0(g)} g · ${r0(f.per.kcal * g / 100)} kcal</div></div><b style="color:var(--fib);white-space:nowrap">+${r1(f.per.fib * g / 100)} g</b></div>`; }).join('')}</div>`;
+    ${FIB_IDEAS.map((f, i) => { const g = f.serving || 100; return `<div class="it" data-fib="${i}"><div class="irow">${fi(f.name)}<div><div style="font-weight:600">${esc(f.name)}</div><div class="mute xs">${r0(g)} g · ${r0(f.per.kcal * g / 100)} kcal</div></div></div><b style="color:var(--fib);white-space:nowrap">+${r1(f.per.fib * g / 100)} g</b></div>`; }).join('')}</div>`;
 }
 async function analysePhoto(file) {
   const out = $('#aiRes'); if (!out) return;
