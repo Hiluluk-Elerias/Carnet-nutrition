@@ -85,6 +85,11 @@ label{font-size:12px;font-weight:500;color:var(--mute);display:block;margin-bott
 .e-right{text-align:right;flex:none}
 .e-right b{font-size:15px}
 .chips{display:flex;gap:7px;font-size:11.5px;font-weight:600;justify-content:flex-end;margin-top:2px}
+.wcard2{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;padding:12px 16px}
+.pill-in.sm{width:92px}
+.meas{display:grid;grid-template-columns:1fr 92px;gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--line)}
+.meas input{padding:8px;text-align:right}
+.remind{border-left:4px solid var(--acc)}
 .mbtn{border:0;background:var(--card);color:var(--mute);border-radius:999px;width:30px;height:24px;font-size:16px;line-height:1;box-shadow:var(--shadow)}
 .fibcard .it{display:flex;justify-content:space-between;gap:10px;align-items:center}
 .chip{display:inline-block;border:0;background:color-mix(in srgb,var(--acc) 12%,transparent);color:var(--acc);font-weight:600;font-size:13px;padding:8px 12px;border-radius:999px;margin:12px 6px 0 0}
@@ -143,6 +148,14 @@ tr:last-child td{border-bottom:0}
 /* ===================== Données ===================== */
 const KEY = 'carnet-nutrition-v1';
 const MEALS = ['Petit-déjeuner', 'Déjeuner', 'Dîner', 'Collations'];
+// Mensurations (cm), côté droit pour les membres. mf = colonne de l'export MacroFactor « Body Metrics »
+const MEAS = [
+  { k: 'taille', l: 'Tour de taille (nombril)', mf: 'waist' }, { k: 'hanches', l: 'Hanches', mf: 'hips' },
+  { k: 'poitrine', l: 'Poitrine', mf: 'chest' }, { k: 'epaules', l: 'Épaules', mf: 'shoulders' }, { k: 'cou', l: 'Cou', mf: 'neck' },
+  { k: 'bras', l: 'Bras', mf: 'right bicep' }, { k: 'avantbras', l: 'Avant-bras', mf: 'right forearm' }, { k: 'poignet', l: 'Poignet', mf: 'right wrist' },
+  { k: 'cuisse', l: 'Cuisse', mf: 'right thigh' }, { k: 'mollet', l: 'Mollet', mf: 'right calf' }, { k: 'cheville', l: 'Cheville', mf: 'right ankle' }
+];
+const DAYS_FR = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
 const OFF_FIELDS = 'code,product_name,product_name_fr,brands,nutriments,serving_quantity';
 
 function defaults() {
@@ -156,7 +169,8 @@ function defaults() {
       window: 28,           // jours utilisés pour estimer la dépense
       smooth: 0.9,          // lissage de la dépense (0 = aucun)
       kcalPerKg: 7000,      // réglages calés sur l'historique MacroFactor (écart moyen ≈ 38 kcal)
-      apiKey: '', model: 'claude-sonnet-5-5'
+      apiKey: '', model: 'claude-sonnet-5-5',
+      measDay: 0, measTime: '09:00' // rappel mensurations : 0 = dimanche, 6 = samedi, -1 = désactivé
     },
     days: {},   // 'AAAA-MM-JJ' -> {entries:[], weight:null}
     foods: [],  // mes aliments : {id,name,code,per:{kcal,p,c,f,fib},serving}
@@ -206,7 +220,7 @@ async function ghPut(path, obj, sha, message) {
   if (!r.ok) throw new GhError(r.status, r.status === 409 || r.status === 422 ? 'conflit' : ghMsg(r.status));
   return (await r.json()).content.sha;
 }
-const dayUsed = d => d && (d.entries.length || d.weight != null);
+const dayUsed = d => d && (d.entries.length || d.weight != null || d.bf != null || (d.meas && Object.keys(d.meas).length));
 function localMonth(m) { const o = {}; for (const [k, d] of Object.entries(S.days)) if (k.startsWith(m) && dayUsed(d)) o[k] = d; return o; }
 function profil() { const { apiKey, ...settings } = S.settings; return { version: 1, settings, foods: S.foods, recipes: S.recipes, meals: S.meals, mf: S.mf }; }
 let syncTimer = null, syncing = false, syncAgain = false;
@@ -449,8 +463,9 @@ function renderJournal() {
     </div>
     <div class="macs">${mac('Protéines', t.p, T.p, 'var(--p)')}${mac('Lipides', t.f, T.f, 'var(--f)')}${mac('Glucides', t.c, T.c, 'var(--c)')}${mac('Fibres', t.fib, T.fib, 'var(--fib)')}</div>
   </div>
-  <div class="card wcard"><div><div style="font-weight:700">Poids du matin</div><div class="mute xs">${(() => { const tt = displayTrend(), tr = tt.length ? tt[tt.length - 1] : null; return tr != null ? 'Tendance ' + r1(tr) + ' kg' : 'Pèse-toi au réveil'; })()}</div></div>
-    <div class="pill-in"><input id="wIn" type="number" step="0.1" inputmode="decimal" placeholder="—" value="${d && d.weight != null ? d.weight : ''}"><span class="mute">kg</span></div></div><!--FIB-->`;
+  <div class="card wcard2"><div><div style="font-weight:700">Poids du matin</div><div class="mute xs">${(() => { const tt = displayTrend(), tr = tt.length ? tt[tt.length - 1] : null; return tr != null ? 'Tendance ' + r1(tr) + ' kg' : 'Pèse-toi au réveil'; })()}</div></div>
+    <div class="pill-in sm"><input id="wIn" type="number" step="0.1" inputmode="decimal" placeholder="—" value="${d && d.weight != null ? d.weight : ''}"><span class="mute">kg</span></div>
+    <div class="pill-in sm"><input id="bfIn" type="number" step="0.1" inputmode="decimal" placeholder="—" value="${d && d.bf != null ? d.bf : ''}"><span class="mute">%</span></div></div>${reminderCard()}<!--FIB-->`;
   const groups = {}; (d ? d.entries : []).forEach((e, i) => { (groups[e.meal] = groups[e.meal] || []).push([e, i]); });
   const names = [...MEALS, ...Object.keys(groups).filter(m => !MEALS.includes(m))];
   for (const m of names) {
@@ -470,6 +485,8 @@ function renderJournal() {
   if ($('#copyDay')) $('#copyDay').onclick = () => openCopy(S.days[cur].entries, null, 'la journée');
   document.querySelectorAll('[data-fib]').forEach(el => el.onclick = () => openQty(FIB_IDEAS[+el.dataset.fib]));
   $('#wIn').onchange = e => { const v = num(e.target.value); day(cur).weight = v; save(); toast(v == null ? 'Pesée effacée' : 'Poids enregistré'); render(); };
+  $('#bfIn').onchange = e => { const v = num(e.target.value); day(cur).bf = v; save(); toast(v == null ? 'Masse grasse effacée' : 'Masse grasse enregistrée'); render(); };
+  if ($('#goMeas')) $('#goMeas').onclick = () => { tab = 'poids'; cur = today(); render(); setTimeout(() => { const el = document.getElementById('measCard'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }, 50); };
   document.querySelectorAll('.entry').forEach(el => el.onclick = () => openEdit(+el.dataset.i));
   document.querySelectorAll('[data-meal]').forEach(b => b.onclick = () => openAdd(b.dataset.meal));
 }
@@ -931,21 +948,91 @@ let range = 90;
 function rangeBtns() { return `<div class="row" style="margin-bottom:10px">${[30, 90, 180, 365].map(n => `<button class="btn sm ${range === n ? 'pri' : ''}" data-r="${n}">${n} j</button>`).join('')}</div>`; }
 function bindRange() { document.querySelectorAll('[data-r]').forEach(b => b.onclick = () => { range = +b.dataset.r; render(); }); }
 
+function lastMeas(k, before) {
+  // Dernière valeur d'une mensuration avant (ou à) une date
+  const ks = Object.keys(S.days).filter(d => (!before || d <= before) && S.days[d].meas && S.days[d].meas[k] != null).sort();
+  return ks.length ? { date: ks[ks.length - 1], v: S.days[ks[ks.length - 1]].meas[k], first: S.days[ks[0]].meas[k], firstDate: ks[0] } : null;
+}
+function lastMeasDate() { const ks = Object.keys(S.days).filter(d => S.days[d].meas && Object.keys(S.days[d].meas).length).sort(); return ks.length ? ks[ks.length - 1] : null; }
+let measSel = 'taille';
 function renderPoids() {
   const ser = series(); const d = S.days[cur];
-  let h = weekStrip() + `<div class="card"><h2>Pesée · ${fmtDate(cur)}</h2><div class="row"><input id="wIn2" type="number" step="0.1" inputmode="decimal" value="${d && d.weight != null ? d.weight : ''}" placeholder="kg"><button class="btn pri" id="wSave">Enregistrer</button></div></div>`;
+  let h = weekStrip() + `<div class="card"><h2>Pesée · ${fmtDate(cur)}</h2>
+    <div class="grid2"><div><label>Poids (kg)</label><input id="wIn2" type="number" step="0.1" inputmode="decimal" value="${d && d.weight != null ? d.weight : ''}"></div>
+    <div><label>Masse grasse (%)</label><input id="bfIn2" type="number" step="0.1" inputmode="decimal" value="${d && d.bf != null ? d.bf : ''}"></div></div>
+    <button class="btn pri" id="wSave" style="margin-top:10px">Enregistrer</button></div>`;
   if (ser) {
     const res = run(ser, { ...S.settings, alpha: DISPLAY_ALPHA }), n = ser.dates.length, a = Math.max(0, n - range);
     const lastT = res.trend[n - 1];
     const wk = n > 7 && res.trend[n - 8] != null ? lastT - res.trend[n - 8] : null;
-    h += `<div class="card"><div class="row" style="justify-content:space-between"><div><div class="big">${lastT != null ? r1(lastT) : '—'} kg</div><div class="mute">poids tendance</div></div><div style="text-align:right"><div style="font-size:20px;font-weight:600">${wk == null ? '—' : (wk > 0 ? '+' : '') + wk.toFixed(2).replace('.', ',') + ' kg'}</div><div class="mute">sur 7 jours</div></div></div></div>`;
+    // Masse grasse : moyenne lissée (l'impédancemètre est très variable d'un jour à l'autre)
+    const bf = ser.dates.map(k => S.days[k] && S.days[k].bf != null ? +S.days[k].bf : null);
+    const bfT = []; let t = null; bf.forEach(v => { if (v != null) t = t == null ? v : t + 0.15 * (v - t); bfT.push(t); });
+    const lastBf = bfT[n - 1];
+    h += `<div class="card"><div class="row" style="justify-content:space-between"><div><div class="big">${lastT != null ? r1(lastT) : '—'} kg</div><div class="mute">poids tendance</div></div><div style="text-align:right"><div style="font-size:20px;font-weight:600">${wk == null ? '—' : (wk > 0 ? '+' : '') + wk.toFixed(2).replace('.', ',') + ' kg'}</div><div class="mute">sur 7 jours</div></div></div>
+      ${lastBf != null && lastT != null ? `<div class="grid2" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line)"><div><b style="font-size:18px">${r1(lastBf)} %</b><div class="mute xs">masse grasse (tendance) · ${r1(lastT * lastBf / 100)} kg</div></div><div style="text-align:right"><b style="font-size:18px">${r1(lastT * (1 - lastBf / 100))} kg</b><div class="mute xs">masse maigre estimée</div></div></div>` : ''}</div>`;
     h += `<div class="card">${rangeBtns()}${chart(ser.dates.slice(a), [{ name: 'Pesées', v: ser.w.slice(a), color: 'var(--mute)', dots: true }, { name: 'Tendance', v: res.trend.slice(a), color: 'var(--acc)', area: true }])}</div>`;
-    const rows = ser.dates.map((k, i) => [k, ser.w[i], res.trend[i]]).filter(x => x[1] != null).slice(-14).reverse();
-    h += `<div class="card"><h2>Dernières pesées</h2><table><tr><th>Date</th><th>Pesée</th><th>Tendance</th></tr>${rows.map(([k, w, t]) => `<tr><td>${fmtDate(k)}</td><td>${r1(w)}</td><td>${t != null ? r1(t) : ''}</td></tr>`).join('')}</table></div>`;
+    if (bf.some(v => v != null)) h += `<div class="card"><h2>Masse grasse (balance)</h2>${chart(ser.dates.slice(a), [{ name: 'Mesures', v: bf.slice(a), color: 'var(--mute)', dots: true }, { name: 'Tendance', v: bfT.slice(a), color: 'var(--f)', area: true }], ' %')}<p class="mute xs" style="margin-bottom:0">L’impédancemètre varie beaucoup selon l’hydratation : fie-toi à la tendance, pas à la mesure du jour.</p></div>`;
+    const rows = ser.dates.map((k, i) => [k, ser.w[i], res.trend[i], bf[i]]).filter(x => x[1] != null).slice(-14).reverse();
+    h += `<div class="card"><h2>Dernières pesées</h2><table><tr><th>Date</th><th>Pesée</th><th>Tendance</th><th>MG %</th></tr>${rows.map(([k, w, tr, b]) => `<tr><td>${fmtDate(k)}</td><td>${r1(w)}</td><td>${tr != null ? r1(tr) : ''}</td><td>${b != null ? r1(b) : ''}</td></tr>`).join('')}</table></div>`;
+  }
+  // Mensurations
+  const dm = (d && d.meas) || {};
+  h += `<div class="card" id="measCard"><h2>Mensurations · ${fmtDate(cur)}</h2><p class="mute xs" style="margin-top:-4px">En cm, le matin, côté droit pour bras et jambes. Laisse vide ce que tu ne mesures pas.</p>
+    ${MEAS.map(m => { const lm = lastMeas(m.k, addDays(cur, -1)); return `<div class="meas"><div><div style="font-weight:600;font-size:14px">${m.l}</div><div class="mute xs">${lm ? 'Dernière : ' + r1(lm.v) + ' cm (' + fmtDate(lm.date).toLowerCase() + ')' : '—'}</div></div><input type="number" step="0.1" inputmode="decimal" data-meas="${m.k}" value="${dm[m.k] != null ? dm[m.k] : ''}" placeholder="${lm ? r1(lm.v) : 'cm'}"></div>`; }).join('')}
+    <button class="btn pri" id="measSave" style="margin-top:10px">Enregistrer les mensurations</button></div>`;
+  const used = MEAS.filter(m => lastMeas(m.k));
+  if (used.length) {
+    h += `<div class="card"><h2>Évolution des mensurations</h2><table><tr><th>Mesure</th><th>Actuelle</th><th>Depuis le début</th></tr>${used.map(m => { const lm = lastMeas(m.k), dlt = lm.v - lm.first; return `<tr><td>${m.l.replace(' (nombril)', '')}</td><td>${r1(lm.v)}</td><td style="color:${dlt < 0 ? 'var(--c)' : dlt > 0 ? 'var(--p)' : 'inherit'}">${dlt > 0 ? '+' : ''}${r1(dlt)} cm</td></tr>`; }).join('')}</table>`;
+    if (!used.some(m => m.k === measSel)) measSel = used[0].k;
+    const pts = Object.keys(S.days).filter(k => S.days[k].meas && S.days[k].meas[measSel] != null).sort();
+    if (pts.length >= 2) {
+      const v = pts.map(k => +S.days[k].meas[measSel]);
+      h += `<div style="margin-top:12px"><select id="measSel">${used.map(m => `<option value="${m.k}" ${m.k === measSel ? 'selected' : ''}>${m.l}</option>`).join('')}</select></div>${chart(pts, [{ name: MEAS.find(m => m.k === measSel).l + ' (une mesure par point)', v, color: 'var(--acc)' }], ' cm')}`;
+    }
+    h += `</div>`;
   }
   $('#main').innerHTML = h;
-  $('#wSave').onclick = () => { day(cur).weight = num($('#wIn2').value); save(); toast('Poids enregistré'); render(); };
+  $('#wSave').onclick = () => { const dd = day(cur); dd.weight = num($('#wIn2').value); dd.bf = num($('#bfIn2').value); save(); toast('Enregistré'); render(); };
+  $('#measSave').onclick = () => {
+    const o = {}; document.querySelectorAll('[data-meas]').forEach(el => { const v = num(el.value); if (v != null) o[el.dataset.meas] = v; });
+    const dd = day(cur); if (Object.keys(o).length) dd.meas = o; else delete dd.meas;
+    save(); toast(Object.keys(o).length ? 'Mensurations enregistrées' : 'Mensurations effacées'); render();
+  };
+  if ($('#measSel')) $('#measSel').onchange = e => { measSel = e.target.value; render(); };
   bindRange(); bindWeek();
+}
+
+/* ---------- Rappel des mensurations ---------- */
+function reminderDue() {
+  const md = +S.settings.measDay; if (md < 0 || cur !== today()) return false;
+  const now = new Date(), dow = now.getDay();
+  // Jour du rappel (après l'heure choisie) ou le lendemain, s'il n'y a pas de mensurations depuis 5 jours
+  const [hh, mm] = String(S.settings.measTime || '09:00').split(':').map(Number);
+  const isDay = dow === md && (now.getHours() * 60 + now.getMinutes()) >= hh * 60 + mm, isNext = dow === (md + 1) % 7;
+  if (!isDay && !isNext) return false;
+  const last = lastMeasDate();
+  return !last || last < addDays(today(), -5);
+}
+function reminderCard() {
+  if (!reminderDue()) return '';
+  return `<div class="card remind"><div style="font-weight:700">C’est le jour des mensurations</div><div class="mute xs" style="margin:2px 0 8px">Tour de taille, hanches, bras… en 2 minutes, avant le petit-déjeuner.</div><button class="btn pri sm" id="goMeas">Les saisir</button></div>`;
+}
+function nativeLN() { if (!NATIVE) return null; try { return (window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) || window.Capacitor.registerPlugin('LocalNotifications'); } catch (e) { return null; } }
+let REM = { status: '' };
+async function scheduleReminder(ask = false) {
+  const ln = nativeLN(); if (!ln) return;
+  try {
+    await ln.cancel({ notifications: [{ id: 7 }] });
+    const md = +S.settings.measDay;
+    if (md < 0) { REM.status = 'Rappel désactivé'; return; }
+    await ln.createChannel({ id: 'rappels', name: 'Rappels', description: 'Rappel hebdomadaire des mensurations', importance: 4, visibility: 1 });
+    let p = await ln.checkPermissions(); if (p.display !== 'granted' && ask) p = await ln.requestPermissions();
+    if (p.display !== 'granted') { REM.status = 'Notifications non autorisées'; return; }
+    const [hh, mm] = String(S.settings.measTime || '09:00').split(':').map(Number);
+    await ln.schedule({ notifications: [{ id: 7, title: 'Mensurations', body: 'C’est le moment de prendre tes mensurations de la semaine.', channelId: 'rappels', schedule: { on: { weekday: md + 1, hour: hh, minute: mm }, allowWhileIdle: true } }] });
+    REM.status = `Rappel programmé le ${DAYS_FR[md]} à ${String(hh).padStart(2, '0')}h${String(mm).padStart(2, '0')}`;
+  } catch (e) { REM.status = 'Rappel impossible : ' + ((e && e.message) || e); }
 }
 
 function renderDepense() {
@@ -1058,8 +1145,10 @@ async function importMF(file) {
         trend: col(/trend|tendance/),
         w: col(/weight|poids/, /trend|tendance|target|goal|objectif|lean|maigre/),
         kcal: col(/calorie|energy|énergie|kcal/, /target|goal|objectif|expenditure|budget|dépense/),
-        p: col(/^(protein|protéine|proteine)/, NOT), f: col(/^(fat|lipide)s?( \(|$)/, NOT), c: col(/carb|glucide/, NOT), fib: col(/fib/, NOT)
+        p: col(/^(protein|protéine|proteine)/, NOT), f: col(/^(fat|lipide)s?( \(|$)/, NOT), c: col(/carb|glucide/, NOT), fib: col(/fib/, NOT),
+        bf: col(/fat percent|body fat %|masse grasse/, /visual/)
       };
+      for (const mm of MEAS) m['meas_' + mm.k] = hdr.findIndex(x => x === mm.mf + ' (cm)');
       const lbs = i => i >= 0 && /lb/.test(hdr[i]) ? 0.45359237 : 1;
       const fw = lbs(m.w), ft = lbs(m.trend);
       let cnt = 0;
@@ -1111,6 +1200,9 @@ async function importMF(file) {
     if (!fill) continue;
     if (o.kcal != null && o.kcal > 0 && !hasIntake(k) && !(log && log[k])) { day(k).entries.push({ id: uid(), name: 'Import MacroFactor', meal: 'Import', grams: null, per: null, kcal: o.kcal, p: o.p || 0, c: o.c || 0, f: o.f || 0, fib: o.fib || 0 }); nE++; }
     if (o.w != null && (!S.days[k] || S.days[k].weight == null)) { day(k).weight = r1(o.w * 10) / 10; nW++; }
+    if (o.bf != null && (!S.days[k] || S.days[k].bf == null)) day(k).bf = o.bf;
+    const ms = {}; for (const mm of MEAS) if (o['meas_' + mm.k] != null) ms[mm.k] = o['meas_' + mm.k];
+    if (Object.keys(ms).length && !(S.days[k] && S.days[k].meas)) day(k).meas = ms;
   }
   // La première dépense MacroFactor sert de point de départ à l'algorithme
   const firstMF = Object.keys(S.mf).sort().find(k => S.mf[k].exp != null);
@@ -1136,6 +1228,10 @@ function renderReglages() {
     <div class="grid2"><div><label>Compte</label><input data-cfg="owner" value="${esc(CFG.owner)}" autocapitalize="off"></div><div><label>Dépôt</label><input data-cfg="repo" value="${esc(CFG.repo)}" autocapitalize="off"></div></div>
     <label style="margin-top:8px">Jeton (fine-grained, Contents : lecture et écriture)</label><input type="password" data-cfg="token" value="${esc(CFG.token)}" placeholder="github_pat_…" autocomplete="off">
     <div class="row wrap" style="margin-top:10px"><button class="btn pri" id="syncNow">Synchroniser</button><span class="mute" id="syncInfo">${esc(META.status || (CFG.token ? '' : 'Sur cet appareil seulement'))}</span></div></div>
+  <div class="card"><h2>Rappel des mensurations</h2>
+    <div class="grid2"><div><label>Jour</label><select data-k="measDay"><option value="-1" ${s.measDay < 0 ? 'selected' : ''}>Désactivé</option><option value="6" ${s.measDay == 6 ? 'selected' : ''}>Samedi</option><option value="0" ${s.measDay == 0 ? 'selected' : ''}>Dimanche</option></select></div>
+    <div><label>Heure</label><input type="time" data-k="measTime" data-str value="${esc(s.measTime || '09:00')}"></div></div>
+    <p class="mute xs" style="margin-bottom:0">${NATIVE ? esc(REM.status || 'Une notification arrive chaque semaine sur le téléphone.') : 'Notification sur l’appli Android ; ici, une carte s’affiche dans le journal ce jour-là.'}</p></div>
   <div class="card"><h2>Photo IA</h2><label>Clé API Anthropic</label><input type="password" data-k="apiKey" data-str value="${esc(s.apiKey)}" placeholder="sk-ant-…" autocomplete="off">
     <label style="margin-top:8px">Modèle</label><input data-k="model" data-str value="${esc(s.model)}">
     <p class="mute">La clé reste dans ce navigateur. Elle se crée sur console.anthropic.com.</p></div>
@@ -1165,6 +1261,7 @@ function renderReglages() {
 function bindSettings() {
   document.querySelectorAll('[data-k]').forEach(el => el.onchange = () => {
     const k = el.dataset.k; S.settings[k] = el.hasAttribute('data-str') ? el.value.trim() : (num(el.value) ?? 0); save();
+    if (k === 'measDay' || k === 'measTime') { scheduleReminder(true).then(() => { if (tab === 'reglages') render(); }); return; }
     if (tab === 'depense') render(); else toast('Enregistré');
   });
 }
@@ -1185,6 +1282,10 @@ if (typeof document !== 'undefined' && document.getElementById('main')) {
   render();
   setSync(CFG.token ? '' : '', CFG.token ? '' : 'Sur cet appareil seulement');
   if (CFG.token) sync();
+  if (NATIVE) {
+    scheduleReminder(true);
+    try { const ln = nativeLN(); ln && ln.addListener && ln.addListener('localNotificationActionPerformed', a => { if (a && a.notification && a.notification.id === 7) { tab = 'poids'; cur = today(); render(); } }); } catch (e) {}
+  }
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') scheduleSync(300); });
   window.addEventListener('online', () => scheduleSync(300));
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
