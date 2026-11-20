@@ -45,6 +45,11 @@ body.selmode{padding-bottom:130px}
 .jtools{display:flex;gap:4px;flex-wrap:wrap}
 .ns{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:5px;color:#fff;font-size:11px;font-weight:800;margin-right:4px;vertical-align:1px}
 .nova4{display:inline-block;font-size:10.5px;font-weight:700;color:#b45309;background:color-mix(in srgb,#f59e0b 18%,transparent);padding:1px 6px;border-radius:5px;margin-right:4px;vertical-align:1px}
+.pchip{position:absolute;top:14px;right:58px;height:36px;border-radius:18px;border:0;background:color-mix(in srgb,var(--acc) 14%,transparent);color:var(--acc);font:inherit;font-weight:700;font-size:14px;padding:0 12px;display:none;align-items:center;gap:2px;z-index:2;cursor:pointer}
+.pchip.on{display:flex}
+.pchip .pi{font-size:17px;margin-right:-3px}
+.pchip.pulse{animation:pulse .35s ease-out}
+@keyframes pulse{50%{transform:scale(1.15)}}
 .platebar{position:sticky;bottom:0;margin:12px -18px -28px;padding:10px 18px calc(12px + env(safe-area-inset-bottom));background:var(--card);border-top:1px solid var(--line);display:flex;align-items:center;gap:8px;box-shadow:0 -6px 16px rgba(0,0,0,.06)}
 .platebar .info{flex:1;font-weight:700;font-size:14px}
 .addplate{border:0;background:color-mix(in srgb,var(--acc) 12%,transparent);color:var(--acc);font-weight:800;font-size:20px;width:36px;height:36px;border-radius:50%;flex:none}
@@ -192,7 +197,7 @@ tr:last-child td{border-bottom:0}
 <button id="fab" aria-label="Ajouter"></button>
 <div id="selbar"><div class="top"><span id="selCount"></span><span class="row" style="gap:6px"><button class="btn sm" id="selAll">Tout</button><button class="btn sm" id="selCancel">Annuler</button></span></div>
   <div class="acts"><button class="btn danger" id="selDel">Supprimer</button><button class="btn" id="selCopy">Copier…</button><button class="btn pri" id="selMove">Déplacer…</button></div></div>
-<div class="sheet" id="sheet"><div class="sheetbox"><button class="sx" id="sx" aria-label="Fermer">×</button><div id="sheetIn"></div></div></div>
+<div class="sheet" id="sheet"><div class="sheetbox"><button class="sx" id="sx" aria-label="Fermer">×</button><button class="pchip" id="pchip" aria-label="Voir l’assiette"></button><div id="sheetIn"></div></div></div>
 <div class="toast" id="toast"></div>
 <input type="file" id="fileJson" accept="application/json,.json" hidden>
 <input type="file" id="fileMF" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv,application/octet-stream" hidden>
@@ -646,6 +651,7 @@ function openAdd(meal) {
 /* ---------- Feuilles (fenêtres du bas) ---------- */
 function openSheet(html, opts = {}) {
   document.querySelector('.sheetbox').classList.toggle('tall', !!opts.tall);
+  $('#pchip').classList.remove('on');
   $('#sheetIn').innerHTML = '<div class="grab"></div>' + (ingDraft ? `<div class="mute xs" style="margin-bottom:6px">Ingrédient pour « ${esc(ingDraft.name || 'nouvelle recette')} »</div>` : '') + html;
   if (ingDraft && $('#meal')) $('#meal').parentElement.style.display = 'none';
   if (ingDraft && $('#tm')) $('#tm').parentElement.style.display = 'none';
@@ -672,7 +678,11 @@ const BASE_RAW = [
   ['Orange', 47, 0.9, 9.2, 0.2, 2, 150, 150, 'orange'], ['Clémentine', 46, 0.8, 9.5, 0.2, 1.7, 60, 60, 'clémentine'], ['Kiwi', 58, 1, 10.3, 0.6, 3, 75, 75, 'kiwi'],
   ['Fraises', 32, 0.7, 5.8, 0.3, 2, 125], ['Framboises', 45, 1.2, 5.4, 0.7, 6.5, 125], ['Myrtilles', 57, 0.7, 12, 0.3, 2.4, 100], ['Raisin', 70, 0.7, 16, 0.2, 0.9, 125],
   ['Pêche', 39, 0.8, 8.2, 0.2, 1.5, 150, 150, 'pêche'], ['Abricot', 48, 0.9, 9, 0.2, 2, 40, 40, 'abricot'], ['Prune', 46, 0.7, 10, 0.3, 1.6, 30, 30, 'prune'],
-  ['Cerises', 63, 1.1, 14, 0.3, 1.6, 100], ['Ananas', 52, 0.5, 11.5, 0.2, 1.4, 150], ['Mangue', 65, 0.7, 14, 0.3, 1.7, 150], ['Melon', 34, 0.8, 7, 0.2, 0.9, 200],
+  ['Cerises', 63, 1.1, 14, 0.3, 1.6, 100], ['Mûres', 43, 1.4, 4.9, 0.5, 5.3, 125], ['Groseilles', 47, 1.1, 6.2, 0.2, 5, 100], ['Cassis', 66, 1.4, 9.4, 0.4, 5.8, 100],
+  ['Figue fraîche', 74, 0.8, 16, 0.3, 2.9, 50, 50, 'figue'], ['Nectarine', 44, 1.1, 9, 0.3, 1.7, 150, 150, 'nectarine'], ['Pamplemousse', 42, 0.8, 8, 0.1, 1.6, 250, 250, 'pamplemousse'],
+  ['Mandarine', 53, 0.8, 11, 0.3, 1.8, 70, 70, 'mandarine'], ['Grenade', 83, 1.7, 14, 1.2, 4, 100], ['Litchis', 66, 0.8, 15, 0.4, 1.3, 100, 10, 'litchi'],
+  ['Papaye', 43, 0.5, 9, 0.3, 1.7, 150], ['Fruit de la passion', 97, 2.2, 12, 0.7, 10, 20, 20, 'fruit'], ['Rhubarbe cuite', 20, 0.9, 1.4, 0.2, 2, 100],
+  ['Canneberges séchées', 325, 0.2, 77, 1.4, 5.7, 30], ['Noix de coco râpée', 660, 6.9, 7, 64, 16, 15], ['Figue sèche', 250, 3.3, 54, 0.9, 9.8, 30, 15, 'figue'], ['Ananas', 52, 0.5, 11.5, 0.2, 1.4, 150], ['Mangue', 65, 0.7, 14, 0.3, 1.7, 150], ['Melon', 34, 0.8, 7, 0.2, 0.9, 200],
   ['Pastèque', 32, 0.6, 7, 0.2, 0.4, 250], ['Avocat', 160, 2, 1.8, 14.7, 6.7, 100, 140, 'avocat'], ['Citron (jus)', 25, 0.4, 7, 0.1, 0.3, 15],
   ['Datte sèche', 282, 2.5, 66, 0.4, 7, 25, 8, 'datte'], ['Pruneau', 240, 2.2, 57, 0.4, 7.1, 30, 8, 'pruneau'], ['Abricot sec', 241, 3.4, 54, 0.5, 7.3, 30, 8, 'abricot sec'],
   ['Raisins secs', 299, 3.1, 75, 0.5, 4.5, 30], ['Compote sans sucre ajouté', 50, 0.3, 11, 0.2, 1.5, 100],
@@ -735,6 +745,15 @@ function rankFoods(list, q, max = 30) {
 }
 
 let PLATE = [], LAST_Q = '', PLATE_MODE = false;
+// Assiette : petite pastille en haut de la fenêtre (icônes des aliments + nombre), sans déplacer la liste
+function updChip(pulse) {
+  const c = $('#pchip'); if (!c) return;
+  if (!PLATE_MODE || !PLATE.length) { c.classList.remove('on'); return; }
+  const ic = PLATE.slice(-3).map(e => `<span class="pi">${foodIcon(e.name)}</span>`).join('');
+  c.innerHTML = `${ic}<span style="margin-left:8px">${PLATE.length}</span>`; c.classList.add('on');
+  c.onclick = openPlate;
+  if (pulse) { c.classList.remove('pulse'); void c.offsetWidth; c.classList.add('pulse'); }
+}
 function plateBar() {
   if (!PLATE.length) return '';
   const k = PLATE.reduce((a, e) => a + (+e.kcal || 0), 0);
@@ -760,12 +779,11 @@ function openPlate() {
 }
 function openSearch(initialQ = '') {
   PLATE_MODE = !ingDraft;
-  openSheet(`<h3>Rechercher un aliment</h3>
+  openSheet(`<h3>${PLATE_MODE ? 'Rechercher' : 'Rechercher un aliment'}</h3>
     <input id="q" type="search" placeholder="ex. banane, skyr, flocons d’avoine…" enterkeyhint="search" autocomplete="off" value="${esc(initialQ)}">
-    ${PLATE_MODE ? '<div class="mute xs" style="margin-top:6px">Touche + pour composer une assiette de plusieurs aliments.</div>' : ''}
-    <div id="res" style="margin-top:8px"></div><div id="pbar">${PLATE_MODE ? plateBar() : ''}</div>`, { tall: true });
-  const bindBar = () => { if ($('#plView')) $('#plView').onclick = openPlate; if ($('#plAdd')) $('#plAdd').onclick = openPlate; };
-  bindBar();
+    ${PLATE_MODE ? '<div class="mute xs" style="margin-top:6px">Touche + pour mettre plusieurs aliments dans une assiette.</div>' : ''}
+    <div id="res" style="margin-top:8px"></div>`, { tall: true });
+  updChip();
   const pool = { base: BASE_FOODS, mine: S.foods, rec: recentFoods(400, 365), off: [], rcp: ingDraft ? [] : S.recipes };
   let shown = {}, offQ = '', timer = null, ctrl = null, seq = 0;
   const show = () => {
@@ -779,7 +797,7 @@ function openSearch(initialQ = '') {
     document.querySelectorAll('[data-plate]').forEach(b => b.onclick = ev => {
       ev.stopPropagation(); const [src, i] = b.dataset.plate.split(':'), f = shown[src][+i], g = f.piece || f.serving || 100;
       PLATE.push({ id: uid(), name: f.name, code: f.code, grams: g, per: f.per, ...(f.piece ? { piece: f.piece, unit: f.unit } : {}), ...qMeta(f), ...scale(f.per, g) });
-      $('#pbar').innerHTML = plateBar(); bindBar(); toast(`${f.name} : ${r0(g)} g dans l’assiette`, 1500);
+      updChip(true);
     });
   };
   const searchOFF = async q => {
