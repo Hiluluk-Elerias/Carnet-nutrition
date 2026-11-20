@@ -1149,7 +1149,7 @@ function readSelFields() {
 }
 function openSelCopy() {
   const list = selEntries(); if (!list.length) return;
-  openSheet(`<h3>Copier ${list.length} aliment${list.length > 1 ? 's' : ''}</h3>${selFields(true, cur < today() ? today() : addDays(cur, 1))}
+  openSheet(`<h3>Copier ${list.length} aliment${list.length > 1 ? 's' : ''}</h3>${selFields(true, today())}
     <div class="row" style="margin-top:12px"><button class="btn pri" id="ok">Copier</button><button class="btn" id="cancel">Annuler</button></div>`);
   bindSelFields(); $('#cancel').onclick = closeSheet;
   $('#ok').onclick = () => {
@@ -1205,9 +1205,9 @@ function openMealMenu(m) {
   };
 }
 function openCopy(list, meal, label) {
-  const t = today(), target = cur < t ? t : addDays(cur, 1);
+  const t = today(), target = t;
   openSheet(`<h3>Copier ${esc(label)}</h3><p class="mute">${list.length} aliment${list.length > 1 ? 's' : ''} · ${r0(list.reduce((s, e) => s + (+e.kcal || 0), 0))} kcal</p>
-    <div class="row wrap" style="margin-bottom:10px">${[[t, "Aujourd'hui"], [addDays(t, 1), 'Demain'], [addDays(t, -1), 'Hier']].filter(([k]) => k !== cur).map(([k, l]) => `<button class="btn sm" data-dk="${k}">${l}</button>`).join('')}</div>
+    <div class="row wrap" style="margin-bottom:10px">${[[t, "Aujourd'hui"], [addDays(t, 1), 'Demain'], [addDays(t, -1), 'Hier']].map(([k, l]) => `<button class="btn sm" data-dk="${k}">${l}</button>`).join('')}</div>
     <div class="grid2"><div><label>Jour</label><input type="date" id="cDate" value="${target}"></div>${meal ? `<div><label>Repas</label>${mealSelect(meal)}</div>` : '<div></div>'}</div>
     <div class="row" style="margin-top:12px"><button class="btn pri" id="ok">Copier</button><button class="btn" id="close">Annuler</button></div>`);
   document.querySelectorAll('[data-dk]').forEach(b => b.onclick = () => $('#cDate').value = b.dataset.dk);
