@@ -133,6 +133,7 @@ label{font-size:12px;font-weight:500;color:var(--mute);display:block;margin-bott
 .mh-tot{display:flex;align-items:baseline;gap:8px;font-size:13px;color:var(--mute);font-weight:500}
 .mh-tot b{color:var(--ink);font-size:14px}
 .mh-tot .chips{margin:0}
+.mbtn.hplus{color:var(--acc);font-weight:800;font-size:18px;width:28px;height:24px}
 .mbtn{border:0;background:var(--card);color:var(--mute);border-radius:999px;width:30px;height:24px;font-size:16px;line-height:1;box-shadow:var(--shadow)}
 .fibbtn{display:flex;align-items:center;gap:12px;width:100%;border:0;padding:10px 14px;color:var(--ink);font:inherit;font-size:14px;cursor:pointer}
 .fib-it{display:flex;justify-content:space-between;gap:10px;align-items:center}
@@ -426,7 +427,9 @@ function defaultMeal() { const h = new Date().getHours(); return h < 10 ? 0 : h 
 const nowHM = () => { const d = new Date(); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
 // Heure d'un aliment : celle saisie, sinon l'heure type de son repas
 const entryTime = e => (e && /^\d{1,2}:\d{2}/.test(e.time || '') ? String(e.time).padStart(5, '0').slice(0, 5) : MEAL_HOUR[e && e.meal] || '12:00');
-const defaultTime = meal => cur === today() ? nowHM() : (MEAL_HOUR[meal] || '12:00');
+let pendingHour = null;  // créneau choisi avec le + d'une heure du journal
+const defaultTime = meal => pendingHour || (cur === today() ? nowHM() : (MEAL_HOUR[meal] || '12:00'));
+const mealForHour = h => h < 4 ? 'Collations' : h < 11 ? 'Petit-déjeuner' : h < 15 ? 'Déjeuner' : h < 18 ? 'Collations' : 'Dîner';
 // Heure au créneau près (17 h), comme dans l'affichage par heure : un seul choix à faire
 const hourOptions = (v, empty) => (empty ? `<option value="">${esc(empty)}</option>` : '') + [...Array(24)].map((_, h) => { const hv = String(h).padStart(2, '0') + ':00'; return `<option value="${hv}" ${v && String(v).slice(0, 2) === hv.slice(0, 2) ? 'selected' : ''}>${h} h</option>`; }).join('');
 const timeInput = v => `<div><label>Heure</label><select id="tm">${hourOptions(v)}</select></div>`;
@@ -581,7 +584,7 @@ function renderJournal() {
     <div class="pill-in sm"><input id="wIn" type="number" step="0.1" inputmode="decimal" placeholder="—" value="${d && d.weight != null ? d.weight : ''}"><span class="mute">kg</span></div>
     <div class="pill-in sm"><input id="bfIn" type="number" step="0.1" inputmode="decimal" placeholder="—" value="${d && d.bf != null ? d.bf : ''}"><span class="mute">%</span></div></div>${updateCard()}${reminderCard()}<!--FIB-->`;
   const chipsOf = list => { const t2 = { kcal: 0, p: 0, c: 0, f: 0 }; for (const [e] of list) for (const x in t2) t2[x] += +e[x] || 0; return t2; };
-  const head = (title, list, menu) => { const tt = chipsOf(list); return `<div class="meal"><div class="meal-h"><span>${title}</span><span class="row" style="gap:10px">${list.length ? `<span class="mh-tot"><b>${r0(tt.kcal)}</b> kcal<span class="chips"><span style="color:var(--p)">${r0(tt.p)}P</span><span style="color:var(--f)">${r0(tt.f)}L</span><span style="color:var(--c)">${r0(tt.c)}G</span></span></span>` : ''}${menu && list.length ? `<button class="mbtn" data-mm="${esc(menu)}" aria-label="Options du repas">⋯</button>` : ''}</span></div><div class="card list">`; };
+  const head = (title, list, menu, hour) => { const tt = chipsOf(list); return `<div class="meal"><div class="meal-h"><span class="row" style="gap:8px">${title}${hour ? `<button class="mbtn hplus" data-hplus="${hour}" aria-label="Ajouter à ${+hour} h">+</button>` : ''}</span><span class="row" style="gap:10px">${list.length ? `<span class="mh-tot"><b>${r0(tt.kcal)}</b> kcal<span class="chips"><span style="color:var(--p)">${r0(tt.p)}P</span><span style="color:var(--f)">${r0(tt.f)}L</span><span style="color:var(--c)">${r0(tt.c)}G</span></span></span>` : ''}${menu && list.length ? `<button class="mbtn" data-mm="${esc(menu)}" aria-label="Options du repas">⋯</button>` : ''}</span></div><div class="card list">`; };
   const row = (e, i, sub) => `<div class="entry${selMode && sel.has(e.id) ? ' on' : ''}" data-i="${i}" data-id="${esc(e.id)}"><div class="irow"><button class="pick" data-pick="${esc(e.id)}" aria-label="Sélectionner">${selMode ? '<span class="ck">✓</span>' : fi(e.name, !!e.recipeId)}</button><div><div class="e-name">${esc(e.name)}</div> <div class="mute xs">${sub}${qBadge(e)}${fibUnknown(e) ? '<span style="color:var(--fib);font-weight:600">fibres ? · </span>' : ''}${e.grams ? r0(e.grams) + ' g' : 'portion'}${e.src === 'photo' ? ' · photo IA' : e.src === 'describe' ? ' · décrit (IA)' : ''}</div></div></div>
       <div class="e-right"><b>${r0(e.kcal)}</b> <span class="mute xs">kcal</span><div class="chips"><span style="color:var(--p)">${r0(e.p)}P</span><span style="color:var(--f)">${r0(e.f)}L</span><span style="color:var(--c)">${r0(e.c)}G</span></div></div></div>`;
   if (d) for (const e of d.entries) if (!e.id) e.id = uid();
@@ -590,7 +593,7 @@ function renderJournal() {
     const byH = {}; for (const x of all) (byH[entryTime(x[0]).slice(0, 2)] = byH[entryTime(x[0]).slice(0, 2)] || []).push(x);
     const hours = Object.keys(byH).sort();
     if (!hours.length) h += `<div class="card"><p class="mute" style="margin:0">Rien de saisi pour l’instant. Touche + pour ajouter un aliment.</p></div>`;
-    for (const hh of hours) { h += head(`${+hh} h`, byH[hh]); for (const [e, i] of byH[hh]) h += row(e, i, entryTime(e) + ' · ' + esc(e.meal) + ' · '); h += `</div></div>`; }
+    for (const hh of hours) { h += head(`${+hh} h`, byH[hh], null, hh); for (const [e, i] of byH[hh]) h += row(e, i, entryTime(e) + ' · ' + esc(e.meal) + ' · '); h += `</div></div>`; }
   } else {
     const groups = {}; for (const x of all) (groups[x[0].meal] = groups[x[0].meal] || []).push(x);
     const names = [...MEALS, ...Object.keys(groups).filter(m => !MEALS.includes(m))];
@@ -632,13 +635,14 @@ function renderJournal() {
   if ($('#selStart')) $('#selStart').onclick = () => { selMode = true; sel = new Set(); render(); };
   updSelBar();
   document.querySelectorAll('[data-meal]').forEach(b => b.onclick = () => openAdd(b.dataset.meal));
+  document.querySelectorAll('[data-hplus]').forEach(b => b.onclick = ev => { ev.stopPropagation(); const hh = b.dataset.hplus; pendingHour = hh + ':00'; openAdd(mealForHour(+hh)); });
 }
 function openAdd(meal) {
   pendingMeal = meal || null;
   const rec = recentFoods().slice(0, 10);
   const yk = addDays(cur, -1), yItems = meal && S.days[yk] ? S.days[yk].entries.filter(e => e.meal === meal) : [];
   const yKcal = yItems.reduce((s, e) => s + (+e.kcal || 0), 0);
-  openSheet(`<h3>Ajouter${meal ? ' · ' + esc(meal) : ''}</h3>
+  openSheet(`<h3>Ajouter${pendingHour ? ' · ' + (+pendingHour.slice(0, 2)) + ' h' : meal ? ' · ' + esc(meal) : ''}</h3>
     <div class="tiles t3"><button class="tile" id="tS">${IC.search}Rechercher</button><button class="tile" id="tB">${IC.scan}Scanner</button><button class="tile" id="tR">${IC.recipe}Recettes</button><button class="tile" id="tD">${IC.describe}Décrire</button><button class="tile" id="tP">${IC.photo}Photo IA</button><button class="tile" id="tM">${IC.manual}Manuel</button></div>
     ${yItems.length ? `<button class="chip" id="yday">↺ Comme hier · ${r0(yKcal)} kcal</button>` : ''}
     ${S.meals.length ? `<label style="margin-top:18px">Repas habituels</label><div id="hab">${S.meals.map((m, i) => `<div class="it irow" data-i="${i}"><span class="fi">⭐</span><div><div style="font-weight:600;font-size:14.5px">${esc(m.name)}</div><div class="mute">${m.items.length} aliment${m.items.length > 1 ? 's' : ''} · ${r0(m.items.reduce((s, e) => s + (+e.kcal || 0), 0))} kcal</div></div></div>`).join('')}</div>` : ''}
@@ -660,7 +664,7 @@ function openSheet(html, opts = {}) {
   $('#sheet').classList.add('on'); document.body.classList.add('lock'); $('#sheetIn').scrollTop = 0;
 }
 let sheetMode = 'sheet';
-function closeSheet() { stopCam(); if (ingDraft) return openRecipeEditor(); pendingMeal = null; $('#sheet').classList.remove('on'); document.body.classList.remove('lock'); render(); }
+function closeSheet() { stopCam(); if (ingDraft) return openRecipeEditor(); pendingMeal = null; pendingHour = null; $('#sheet').classList.remove('on'); document.body.classList.remove('lock'); render(); }
 function stopCam() { scanning = false; if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; } }
 function mealSelect(sel) { return `<select id="meal">${[...MEALS].map((m, i) => `<option value="${esc(m)}" ${(sel == null ? (pendingMeal ? m === pendingMeal : i === defaultMeal()) : sel === m) ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select>`; }
 
