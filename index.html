@@ -602,7 +602,7 @@ function renderJournal() {
       h += `</div></div>`;
     }
   }
-  if (d && d.entries.length) h += `<div class="jtools"><button class="add-in" id="selStart" style="padding-left:6px;width:auto">Sélectionner…</button><button class="add-in" id="copyDay" style="width:auto">Copier toute la journée…</button></div>`;
+  if (d && d.entries.length) h += `<div class="jtools"><button class="add-in" id="selStart" style="padding-left:6px;width:auto">Sélectionner…</button></div>`;
   h = h.replace('<!--FIB-->', fiberCard(t, T));
   $('#main').innerHTML = h + '<div style="height:60px"></div>';
   bindWeek();
@@ -618,7 +618,6 @@ function renderJournal() {
     document.querySelectorAll('[data-mp]').forEach(b => b.onclick = () => pager.scrollTo({ left: +b.dataset.mp * pager.clientWidth, behavior: 'smooth' }));
   }
   document.querySelectorAll('[data-mm]').forEach(b => b.onclick = () => openMealMenu(b.dataset.mm));
-  if ($('#copyDay')) $('#copyDay').onclick = () => openCopy(S.days[cur].entries, null, 'la journée');
   if ($('#fibIdeas')) $('#fibIdeas').onclick = openFiberIdeas;
   $('#wIn').onchange = e => { const v = num(e.target.value); day(cur).weight = v; save(); toast(v == null ? 'Pesée effacée' : 'Poids enregistré'); render(); };
   $('#bfIn').onchange = e => { const v = num(e.target.value); day(cur).bf = v; save(); toast(v == null ? 'Masse grasse effacée' : 'Masse grasse enregistrée'); render(); };
