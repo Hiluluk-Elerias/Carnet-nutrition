@@ -427,7 +427,9 @@ const nowHM = () => { const d = new Date(); return String(d.getHours()).padStart
 // Heure d'un aliment : celle saisie, sinon l'heure type de son repas
 const entryTime = e => (e && /^\d{1,2}:\d{2}/.test(e.time || '') ? String(e.time).padStart(5, '0').slice(0, 5) : MEAL_HOUR[e && e.meal] || '12:00');
 const defaultTime = meal => cur === today() ? nowHM() : (MEAL_HOUR[meal] || '12:00');
-const timeInput = v => `<div><label>Heure</label><input type="time" id="tm" value="${v}"></div>`;
+// Heure au créneau près (17 h), comme dans l'affichage par heure : un seul choix à faire
+const hourOptions = (v, empty) => (empty ? `<option value="">${esc(empty)}</option>` : '') + [...Array(24)].map((_, h) => { const hv = String(h).padStart(2, '0') + ':00'; return `<option value="${hv}" ${v && String(v).slice(0, 2) === hv.slice(0, 2) ? 'selected' : ''}>${h} h</option>`; }).join('');
+const timeInput = v => `<div><label>Heure</label><select id="tm">${hourOptions(v)}</select></div>`;
 const pickTime = meal => { const el = document.getElementById('tm'); return el && el.value ? el.value : defaultTime(meal); };
 function toast(m, ms = 2500) { const t = $('#toast'); if (!t) return; t.textContent = m; t.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => t.style.display = 'none', ms); }
 function scale(per, g) { const o = {}; for (const x of ['kcal', 'p', 'c', 'f', 'fib']) o[x] = per[x] == null ? 0 : per[x] * g / 100; return o; }
@@ -1138,7 +1140,7 @@ function selFields(withDay, dayDefault) {
   return `${withDay ? `<div class="row wrap" style="margin-bottom:10px">${[[today(), "Aujourd'hui"], [addDays(today(), 1), 'Demain'], [addDays(today(), -1), 'Hier']].map(([k, l]) => `<button class="btn sm" data-dk="${k}">${l}</button>`).join('')}</div>` : ''}
     <div class="grid2"><div><label>Jour</label><input type="date" id="sDate" value="${dayDefault}"></div>
     <div><label>Repas</label><select id="sMeal"><option value="">Inchangé</option>${MEALS.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join('')}</select></div>
-    <div><label>Heure</label><input type="time" id="sTime"></div><div style="align-self:end" class="mute xs">Vide = heure inchangée</div></div>`;
+    <div><label>Heure</label><select id="sTime">${hourOptions(null, 'Inchangée')}</select></div><div></div></div>`;
 }
 function bindSelFields() { document.querySelectorAll('[data-dk]').forEach(b => b.onclick = () => $('#sDate').value = b.dataset.dk); }
 function readSelFields() {
