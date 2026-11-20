@@ -1502,6 +1502,8 @@ function weekStats(days) {
     if (!d.entries.length || k >= today()) continue;
     s.n++; const t = totals(k); for (const x of ['kcal', 'p', 'c', 'f', 'fib']) s[x] += t[x];
     for (const e of d.entries) {
+      // Qualité : seulement les aliments saisis dans Nutrition (l'historique MacroFactor n'a ni Nutri-Score ni NOVA)
+      if (e.src === 'macrofactor' || e.meal === 'Import') continue;
       const kc = +e.kcal || 0, nv = +e.nova;
       if (nv === 4) s.q.n4 += kc; else if (nv === 3) s.q.n3 += kc; else if (nv === 1 || nv === 2) s.q.n12 += kc; else s.q.nUnk += kc;
       if (e.ns) { s.q.nsKnown += kc; if (e.ns === 'a' || e.ns === 'b') s.q.nsGood += kc; if (e.ns === 'd' || e.ns === 'e') s.q.nsBad += kc; }
@@ -1563,7 +1565,7 @@ function renderBilan() {
       <div class="qbar"><i style="width:${pc(st.q.n12)}%;background:var(--c)"></i><i style="width:${pc(st.q.n3)}%;background:#e5b400"></i><i style="width:${pc(st.q.n4)}%;background:#e63e11"></i><i style="width:${pc(st.q.nUnk)}%;background:var(--line)"></i></div>
       <div class="legend"><span><i style="background:var(--c)"></i>Brut / peu transformé ${r0(pc(st.q.n12))} %</span><span><i style="background:#e5b400"></i>Transformé ${r0(pc(st.q.n3))} %</span><span><i style="background:#e63e11"></i>Ultra-transformé ${r0(pc(st.q.n4))} %</span><span><i style="background:var(--line)"></i>Inconnu ${r0(pc(st.q.nUnk))} %</span></div>
       ${st.q.nsKnown ? `<p class="mute xs" style="margin:8px 0 0">Nutri-Score (produits notés) : ${r0(st.q.nsGood / st.q.nsKnown * 100)} % des calories en A ou B, ${r0(st.q.nsBad / st.q.nsKnown * 100)} % en D ou E.</p>` : ''}
-      <p class="mute xs" style="margin:6px 0 0">Connu pour les aliments de base et la plupart des produits Open Food Facts ; inconnu pour l’historique MacroFactor.</p></div>` : ''}
+      <p class="mute xs" style="margin:6px 0 0">Calculé sur les aliments saisis dans Nutrition (l’historique MacroFactor n’est pas noté). Connu pour les aliments de base et la plupart des produits Open Food Facts.</p></div>` : `<div class="card"><h2>Qualité des aliments</h2><p class="mute" style="margin:0">Disponible pour les repas saisis dans Nutrition (depuis le 19 novembre) : l’historique MacroFactor n’a pas ces notes.</p></div>`}
     <div class="card"><h2>Conseils de la semaine</h2>${tips.length ? tips.map(([i, t]) => `<div class="tip"><span>${i}</span><span>${t}</span></div>`).join('') : '<p class="mute" style="margin:0">Rien à signaler.</p>'}
       <p class="mute xs" style="margin:8px 0 0">Repères généraux de nutrition sportive, pas un avis médical.</p></div>`;
   $('#bPrev').onclick = () => { bilanOff++; render(); };
