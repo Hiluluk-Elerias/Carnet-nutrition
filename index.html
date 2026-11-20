@@ -15,6 +15,7 @@
 :root{--bg:#f2f3f6;--card:#fff;--card2:#f6f7f9;--ink:#13151a;--mute:#7c828d;--line:#e6e8ed;--acc:#3b82f6;--acc2:#f59e0b;--kcal:#3b82f6;--p:#f0577a;--f:#f4b13e;--c:#2fbf8a;--fib:#9a7cf6;--danger:#ef4444;--shadow:0 1px 2px rgba(16,24,40,.04),0 6px 18px rgba(16,24,40,.06)}
 @media (prefers-color-scheme:dark){:root{--bg:#0c0e12;--card:#16191f;--card2:#1d2129;--ink:#f1f3f6;--mute:#8b919c;--line:#262a33;--shadow:none}}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body.tabj{padding-bottom:150px}
 body{margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);padding-bottom:84px;-webkit-font-smoothing:antialiased}
 header{position:sticky;top:0;background:var(--bg);padding:14px 18px 8px;display:flex;align-items:center;gap:8px;z-index:5}
 #syncDot{width:9px;height:9px;border-radius:50%;background:var(--line);flex:none}
@@ -40,7 +41,7 @@ nav button.on svg{stroke:var(--acc)}
 #selbar .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-weight:700}
 #selbar .acts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 #selbar .acts .btn{padding:11px 4px;font-size:14px}
-body.selmode nav,body.selmode #fab{display:none!important}
+body.selmode nav,body.selmode #qbar{display:none!important}
 body.selmode{padding-bottom:130px}
 .jtools{display:flex;gap:4px;flex-wrap:wrap}
 .ns{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:5px;color:#fff;font-size:11px;font-weight:800;margin-right:4px;vertical-align:1px}
@@ -67,8 +68,14 @@ body.selmode{padding-bottom:130px}
 .tip span:first-child{font-size:18px}
 .qbar{display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--line);margin:6px 0 4px}
 .qbar i{display:block;height:100%}
-#fab{position:fixed;right:18px;bottom:80px;width:58px;height:58px;border-radius:50%;border:0;background:var(--acc);color:#fff;box-shadow:0 8px 24px rgba(59,130,246,.45);z-index:7;display:flex;align-items:center;justify-content:center}
-#fab svg{width:28px;height:28px}
+/* Barre d'ajout façon MacroFactor : recherche + scan + IA + autres */
+#qbar{position:fixed;left:10px;right:10px;bottom:calc(66px + env(safe-area-inset-bottom));z-index:7;display:flex;align-items:center;gap:6px;background:var(--card);border-radius:18px;padding:6px;box-shadow:0 6px 24px rgba(16,24,40,.16);max-width:620px;margin:0 auto}
+#qbar .qin{flex:1;display:flex;align-items:center;gap:10px;background:var(--card2);border-radius:13px;padding:11px 12px;color:var(--mute);font-size:15px;cursor:text;min-width:0}
+#qbar .qin svg{width:19px;height:19px;flex:none}
+#qbar button{border:0;background:var(--card2);color:var(--ink);width:44px;height:44px;border-radius:13px;display:flex;align-items:center;justify-content:center;flex:none}
+#qbar button svg{width:22px;height:22px}
+#qbar #fab{background:var(--acc);color:#fff}
+#qbar #qAI svg{stroke:var(--acc)}
 button{font:inherit;cursor:pointer}
 .btn{border:0;background:var(--card2);color:var(--ink);border-radius:12px;padding:10px 14px;font-weight:600}
 .btn.pri{background:var(--acc);color:#fff}
@@ -200,7 +207,7 @@ tr:last-child td{border-bottom:0}
   <button data-tab="bilan"></button>
   <button data-tab="reglages"></button>
 </nav>
-<button id="fab" aria-label="Ajouter"></button>
+<div id="qbar"><div class="qin" id="qOpen" role="button" aria-label="Rechercher un aliment"></div><button id="qScan" aria-label="Scanner un code-barres"></button><button id="qAI" aria-label="Photo IA"></button><button id="fab" aria-label="Autres moyens d’ajouter"></button></div>
 <div id="selbar"><div class="top"><span id="selCount"></span><span class="row" style="gap:6px"><button class="btn sm" id="selAll">Tout</button><button class="btn sm" id="selCancel">Annuler</button></span></div>
   <div class="acts"><button class="btn danger" id="selDel">Supprimer</button><button class="btn" id="selCopy">Copier…</button><button class="btn pri" id="selMove">Déplacer…</button></div></div>
 <div class="sheet" id="sheet"><div class="sheetbox"><button class="sx" id="sx" aria-label="Fermer">×</button><button class="pchip" id="pchip" aria-label="Voir l’assiette"></button><div id="sheetIn"></div></div></div>
@@ -531,6 +538,7 @@ const IC = {
   scan: ic('<path d="M4 7V5a1 1 0 0 1 1-1h2M17 4h2a1 1 0 0 1 1 1v2M20 17v2a1 1 0 0 1-1 1h-2M7 20H5a1 1 0 0 1-1-1v-2M8 8v8M11 8v8M14 8v8M17 8v8"/>'),
   photo: ic('<path d="M4 8a2 2 0 0 1 2-2h2l1.5-2h5L16 6h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.5" r="3.5"/>'),
   manual: ic('<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>'),
+  ai: ic('<path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>'),
   describe: ic('<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>'),
   recipe: ic('<path d="M4 11h16a8 8 0 0 1-16 0z"/><path d="M8 7c0-1.5 1-2 1-3M12 7c0-1.5 1-2 1-3M16 7c0-1.5 1-2 1-3"/>')
 };
@@ -541,7 +549,7 @@ function render() {
   const dated = tab === 'journal' || tab === 'poids';
   $('#todayBtn').style.display = dated && cur !== today() ? 'block' : 'none';
   if (tab !== 'journal' && selMode) exitSel(false);
-  $('#fab').style.display = tab === 'journal' ? 'flex' : 'none';
+  $('#qbar').style.display = tab === 'journal' ? 'flex' : 'none'; document.body.classList.toggle('tabj', tab === 'journal');
   $('#title').textContent = tab === 'journal' ? fmtDate(cur) : TABS[tab];
   ({ journal: renderJournal, poids: renderPoids, depense: renderDepense, bilan: renderBilan, reglages: renderReglages })[tab]();
 }
@@ -1064,9 +1072,9 @@ function openPhoto() {
   }
   openSheet(`<h3>Photo IA</h3><p class="mute">Prends ton repas en photo. Les quantités sont des estimations : vérifie-les avant d’ajouter.</p>
     <label>Précisions (facultatif)</label><input id="hint" placeholder="ex. 2 œufs, huile d’olive, assiette de 27 cm">
-    <div class="row" style="margin-top:10px"><button class="btn pri" id="take">Prendre / choisir une photo</button><button class="btn" id="close">Fermer</button></div>
+    <div class="row wrap" style="margin-top:10px"><button class="btn pri" id="take">Prendre / choisir une photo</button><button class="btn" id="toDesc">Décrire en texte</button></div>
     <div id="aiRes" style="margin-top:10px"></div>`);
-  $('#close').onclick = closeSheet;
+  $('#toDesc').onclick = openDescribe;
   $('#take').onclick = () => { const f = $('#filePhoto'); f.value = ''; f.click(); };
 }
 function resizeImage(file, max = 1024) {
@@ -1862,6 +1870,9 @@ if (typeof document !== 'undefined' && document.getElementById('main')) {
   $('#selAll').onclick = () => { const es = (S.days[cur] && S.days[cur].entries) || []; sel = sel.size === es.length ? new Set() : new Set(es.map(e => e.id)); render(); };
   $('#selDel').onclick = selDelete; $('#selCopy').onclick = openSelCopy; $('#selMove').onclick = openSelMove;
   $('#fab').innerHTML = IC.plus; $('#fab').onclick = () => openAdd(null);
+  $('#qOpen').innerHTML = IC.search + '<span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Rechercher un aliment</span>'; $('#qOpen').onclick = () => openSearch();
+  $('#qScan').innerHTML = IC.scan; $('#qScan').onclick = openScan;
+  $('#qAI').innerHTML = IC.ai; $('#qAI').onclick = openPhoto;
   $('#sheet').onclick = e => { if (e.target.id === 'sheet') { if (sheetMode === 'editor') ingDraft = null; closeSheet(); } };
   $('#sx').onclick = () => { if (sheetMode === 'editor') ingDraft = null; closeSheet(); };
   $('#filePhoto').onchange = e => { if (e.target.files[0]) analysePhoto(e.target.files[0]); };
