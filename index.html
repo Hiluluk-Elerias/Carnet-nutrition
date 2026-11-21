@@ -1106,7 +1106,8 @@ async function askAI(content, maxTokens = 2000) {
   return (j.content || []).map(c => c.text || '').join('');
 }
 const cutJSON = (txt, a, b) => JSON.parse(txt.slice(txt.indexOf(a), txt.lastIndexOf(b) + 1));
-const AI_ITEM = '{"nom":"…","grammes":0,"kcal":0,"proteines":0,"glucides":0,"lipides":0,"fibres":0}';
+const AI_ITEM = '{"nom":"…","grammes":0,"kcal":0,"proteines":0,"glucides":0,"lipides":0,"fibres":0,"nova":1}';
+const AI_NOVA = '« nova » = groupe NOVA estimé : 1 brut ou peu transformé, 2 ingrédient culinaire (huile, beurre, sucre), 3 transformé (pain, fromage, conserve), 4 ultra-transformé (biscuits, sodas, plats industriels, sauces toutes prêtes).';
 function needKey(title) {
   if (S.settings.apiKey) return false;
   openSheet(`<h3>${title}</h3><p>Ajoute d’abord une clé API Anthropic dans <b>Réglages</b> (console.anthropic.com). Une analyse coûte moins d’un centime.</p><button class="btn" id="close">Fermer</button>`);
@@ -1150,6 +1151,7 @@ function openDescribe() {
     try {
       const prompt = `Tu es nutritionniste. Voici ce que l’utilisateur a mangé : « ${txt} ».
 Liste chaque aliment séparément. Utilise les quantités indiquées ; sinon estime une portion française standard. Précise si la quantité est crue ou cuite dans le nom quand c’est utile. Donne les valeurs nutritionnelles pour la quantité (table Ciqual si possible).
+${AI_NOVA}
 Réponds UNIQUEMENT avec un tableau JSON, sans texte autour : [${AI_ITEM}]`;
       showAiItems(cutJSON(await askAI([{ type: 'text', text: prompt }]), '[', ']'), 'describe');
     } catch (e) { out.innerHTML = `<p style="color:var(--danger)">Échec : ${esc(e.message)}</p>`; }
@@ -1332,7 +1334,8 @@ async function analysePhoto(file) {
 2. Estime le poids de chaque composant tel que servi (cuit) en t’aidant de la taille de l’assiette ou du bol (assiette ≈ 26 cm, bol ≈ 15 cm), des couverts et de la hauteur des aliments. Les quantités sont souvent SOUS-estimées sur photo : un bol de nouilles ou de pâtes contient en général 250 à 350 g cuits, une assiette de riz 200 à 250 g.
 3. Compte les matières grasses de cuisson et les sauces comme des éléments à part, même si elles se voient peu.
 4. Donne les valeurs nutritionnelles pour ces quantités (table Ciqual si possible ; glucides hors fibres).${hint ? ' Précisions de l’utilisateur : ' + hint : ''}
-Réponds UNIQUEMENT avec un tableau JSON, sans texte autour : [{"nom":"…","grammes":0,"kcal":0,"proteines":0,"glucides":0,"lipides":0,"fibres":0}]`;
+5. ${AI_NOVA}
+Réponds UNIQUEMENT avec un tableau JSON, sans texte autour : [${AI_ITEM}]`;
     const txt = await askAI([{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } }, { type: 'text', text: prompt }]);
     showAiItems(cutJSON(txt, '[', ']'), 'photo');
   } catch (e) { out.innerHTML = `<p style="color:var(--danger)">Échec de l’analyse : ${esc(e.message)}</p>`; }
@@ -1342,7 +1345,7 @@ function showAiItems(items, src = 'photo') {
   out.innerHTML = `<label>Résultat — modifie si besoin (g · kcal · P · G · L)</label>` + items.map((it, i) => `
     <div class="ai-row" data-i="${i}"><input type="checkbox" checked class="ck"><input class="nm" value="${esc(it.nom)}"><input class="gr" type="number" value="${r0(it.grammes)}">
     <div class="n"><input class="k" type="number" value="${r0(it.kcal)}"><input class="p" type="number" value="${r1(it.proteines)}"><input class="c" type="number" value="${r1(it.glucides)}"><input class="f" type="number" value="${r1(it.lipides)}"></div>
-    <input type="hidden" class="fb" value="${r1(it.fibres)}"></div>`).join('') +
+    <input type="hidden" class="fb" value="${r1(it.fibres)}"><input type="hidden" class="nv" value="${[1, 2, 3, 4].includes(+it.nova) ? +it.nova : ''}"></div>`).join('') +
     `<div class="card" id="aiTot" style="margin:10px 0 6px"></div>
      <label>Portion globale (si l’estimation te paraît trop petite ou trop grande)</label>
      <div class="row wrap" id="aiScale">${[0.75, 1, 1.25, 1.5].map(x => `<button class="btn sm ${x === 1 ? 'pri' : ''}" data-x="${x}">×${String(x).replace('.', ',')}</button>`).join('')}</div>
@@ -1369,7 +1372,7 @@ function showAiItems(items, src = 'photo') {
       if (!row.querySelector('.ck').checked) return;
       const q = c => num(row.querySelector(c).value) || 0;
       const g = q('.gr'), vals = { kcal: q('.k'), p: q('.p'), c: q('.c'), f: q('.f'), fib: q('.fb') };
-      day(cur).entries.push({ id: uid(), name: row.querySelector('.nm').value || 'Aliment', meal, time: defaultTime(meal), grams: g, per: g ? scale(vals, 10000 / g) : null, ...vals, src }); n++;
+      day(cur).entries.push({ id: uid(), name: row.querySelector('.nm').value || 'Aliment', meal, time: defaultTime(meal), grams: g, per: g ? scale(vals, 10000 / g) : null, ...vals, src, ...(+row.querySelector('.nv').value ? { nova: +row.querySelector('.nv').value, novaEst: true } : {}) }); n++;
     });
     save(); closeSheet(); toast(n + ' aliment(s) ajouté(s)');
   };
@@ -1488,6 +1491,51 @@ function updateCard() {
 }
 
 
+/* ---------- Qualité : compléter les notes manquantes ---------- */
+const QUALITY_START = '2026-11-19';  // début de la saisie dans Nutrition
+const baseByName = n => BASE_FOODS.find(b => norm(b.name) === norm(n));
+function qualityTargets() {
+  const out = [];
+  for (const [k, d] of Object.entries(S.days)) if (k >= QUALITY_START) for (const e of d.entries) if (!e.nova && e.src !== 'macrofactor' && e.meal !== 'Import') out.push(e);
+  return out;
+}
+let QB_RUNNING = false;
+async function backfillQuality() {
+  if (QB_RUNNING) return; QB_RUNNING = true; let changed = false, fetched = 0;
+  try {
+    for (const e of qualityTargets()) {
+      const b = baseByName(e.name);
+      if (b) { e.nova = b.nova; changed = true; continue; }
+      if (e.code && !e.qChecked && fetched < 20) {
+        fetched++;
+        try {
+          const j = await (await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(e.code)}.json?fields=nutriscore_grade,nova_group`)).json();
+          const pr = j.product || {}, nova = num(pr.nova_group), ns = /^[a-e]$/.test(pr.nutriscore_grade || '') ? pr.nutriscore_grade : null;
+          for (const [k, d] of Object.entries(S.days)) if (k >= QUALITY_START) for (const x of d.entries) if (x.code === e.code) { if (nova) x.nova = nova; if (ns) x.ns = ns; x.qChecked = 1; }
+          for (const f of S.foods) if (f.code === e.code) { if (nova) f.nova = nova; if (ns) f.ns = ns; }
+          changed = true;
+        } catch (err) {}
+      }
+    }
+  } finally { QB_RUNNING = false; }
+  if (changed) { save(); if (tab === 'bilan') render(); }
+}
+async function estimateNovaAI() {
+  const list = qualityTargets(), names = [...new Set(list.map(e => e.name))].slice(0, 80);
+  if (!names.length) return toast('Rien à estimer');
+  if (!S.settings.apiKey) return toast('Ajoute ta clé API dans Réglages → Photo IA');
+  toast('Estimation en cours…', 4000);
+  try {
+    const txt = await askAI([{ type: 'text', text: `Pour chacun de ces aliments, donne son groupe NOVA probable. ${AI_NOVA}
+Aliments :
+${names.map(n => '- ' + n).join('\n')}
+Réponds UNIQUEMENT avec un objet JSON associant chaque nom exact à son groupe : {"nom": 1}` }], 1500);
+    const o = cutJSON(txt, '{', '}'); let n = 0;
+    for (const e of list) { const v = +o[e.name]; if ([1, 2, 3, 4].includes(v)) { e.nova = v; e.novaEst = true; n++; } }
+    save(); render(); toast(`${n} aliment${n > 1 ? 's' : ''} classé${n > 1 ? 's' : ''} (estimation IA)`);
+  } catch (err) { toast('Estimation impossible : ' + err.message, 4000); }
+}
+
 /* ---------- Bilan de la semaine ---------- */
 let bilanOff = 0;
 function weekDays(off) {
@@ -1565,10 +1613,13 @@ function renderBilan() {
       <div class="qbar"><i style="width:${pc(st.q.n12)}%;background:var(--c)"></i><i style="width:${pc(st.q.n3)}%;background:#e5b400"></i><i style="width:${pc(st.q.n4)}%;background:#e63e11"></i><i style="width:${pc(st.q.nUnk)}%;background:var(--line)"></i></div>
       <div class="legend"><span><i style="background:var(--c)"></i>Brut / peu transformé ${r0(pc(st.q.n12))} %</span><span><i style="background:#e5b400"></i>Transformé ${r0(pc(st.q.n3))} %</span><span><i style="background:#e63e11"></i>Ultra-transformé ${r0(pc(st.q.n4))} %</span><span><i style="background:var(--line)"></i>Inconnu ${r0(pc(st.q.nUnk))} %</span></div>
       ${st.q.nsKnown ? `<p class="mute xs" style="margin:8px 0 0">Nutri-Score (produits notés) : ${r0(st.q.nsGood / st.q.nsKnown * 100)} % des calories en A ou B, ${r0(st.q.nsBad / st.q.nsKnown * 100)} % en D ou E.</p>` : ''}
-      <p class="mute xs" style="margin:6px 0 0">Calculé sur les aliments saisis dans Nutrition (l’historique MacroFactor n’est pas noté). Connu pour les aliments de base et la plupart des produits Open Food Facts.</p></div>` : `<div class="card"><h2>Qualité des aliments</h2><p class="mute" style="margin:0">Disponible pour les repas saisis dans Nutrition (depuis le 19 novembre) : l’historique MacroFactor n’a pas ces notes.</p></div>`}
+      <p class="mute xs" style="margin:6px 0 0">Calculé sur les aliments saisis dans Nutrition depuis le 19 novembre (l’historique MacroFactor est exclu). Les notes viennent d’Open Food Facts et des aliments de base ; les autres (photo, recettes, aliments repris de MacroFactor) restent « inconnus » tant qu’ils ne sont pas estimés.</p>
+      ${pc(st.q.nUnk) > 15 ? `<button class="btn sm" id="estNova" style="margin-top:8px">Estimer les aliments inconnus avec l’IA</button>` : ''}</div>` : `<div class="card"><h2>Qualité des aliments</h2><p class="mute" style="margin:0">Disponible pour les repas saisis dans Nutrition (depuis le 19 novembre) : l’historique MacroFactor n’a pas ces notes.</p></div>`}
     <div class="card"><h2>Conseils de la semaine</h2>${tips.length ? tips.map(([i, t]) => `<div class="tip"><span>${i}</span><span>${t}</span></div>`).join('') : '<p class="mute" style="margin:0">Rien à signaler.</p>'}
       <p class="mute xs" style="margin:8px 0 0">Repères généraux de nutrition sportive, pas un avis médical.</p></div>`;
   $('#bPrev').onclick = () => { bilanOff++; render(); };
+  if ($('#estNova')) $('#estNova').onclick = estimateNovaAI;
+  backfillQuality();
   $('#bNext').onclick = () => { if (bilanOff > 0) { bilanOff--; render(); } };
 }
 
