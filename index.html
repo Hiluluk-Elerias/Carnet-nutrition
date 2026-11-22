@@ -90,6 +90,7 @@ button{font:inherit;cursor:pointer}
 .npick{margin-top:12px;padding-top:6px;border-top:1px solid var(--line)}.ng{margin-top:8px}.ng b{font-size:12.5px;color:var(--mute);font-weight:600}.nch{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:6px 10px;font-size:13px;margin:5px 5px 0 0}.nch.on{background:color-mix(in srgb,var(--acc) 14%,transparent);border-color:var(--acc);color:var(--acc);font-weight:600}
 .ngh{font-size:12px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.04em;margin:16px 0 2px}.nrow{padding:8px 0;border-bottom:1px solid var(--line)}.nrow:last-child{border-bottom:0}.nl{display:flex;justify-content:space-between;gap:8px;font-size:14.5px;align-items:baseline}.nv{text-align:right;white-space:nowrap}.np{font-size:12.5px;margin-left:4px}
 .alr{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}.alr:last-of-type{border-bottom:0}.ald{flex:none;width:9px;height:9px;border-radius:50%;margin-top:6px}.alban{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:0;font:inherit;color:var(--ink);padding:12px 16px}
+input[type=range]#rateR{-webkit-appearance:none;appearance:none;height:10px;border-radius:5px;background:var(--track)}input[type=range]#rateR::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;border-radius:50%;background:#fff;border:3px solid var(--ink);box-shadow:var(--shadow)}input[type=range]#rateR::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:#fff;border:3px solid var(--ink)}.zchip{color:#fff;font-size:12.5px;font-weight:700;padding:3px 9px;border-radius:999px}
 .grid5{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
 .grid5 input{padding:10px 4px;text-align:center}
 input,select,textarea{font:inherit;padding:11px 12px;border:1px solid transparent;border-radius:12px;background:var(--card2);color:var(--ink);width:100%;outline:none}
@@ -277,7 +278,9 @@ function defaults() {
     settings: {
       rate: -0.25,          // kg / semaine visé
       goalKcal: 0,          // 0 = calculé automatiquement
-      proteinG: 140, fatG: 60, fiberG: 30,
+      proteinG: 140, fatG: 60, fiberG: 30, // grammes fixes (mode 'g')
+      macroMode: 'kg', proteinPerKg: 1.6, fatPerKg: 0.9, // mode 'kg' : suit le poids tendance
+      fiberMode: 'fixe',    // 'fixe' = fiberG ; 'kcal' = 14 g pour 1000 kcal
       initialTDEE: 2500,    // utilisé tant qu'il n'y a pas assez de données
       alpha: 0.1,           // lissage du poids (moyenne mobile exponentielle)
       window: 28,           // jours utilisés pour estimer la dépense
@@ -572,9 +575,35 @@ function displayTrend() { const ser = series(); return ser ? run(ser, { ...S.set
 // Objectifs : en mode hebdomadaire, la dépense est figée à celle du dernier check-in ;
 // le rythme visé, les protéines et les lipides des réglages s'appliquent toujours dessus.
 const lastCheckin = () => (S.checkins || []).slice().sort((a, b) => a.date.localeCompare(b.date)).pop() || null;
-function targetsFrom(tdee) {
-  const s = S.settings, kcal = s.goalKcal > 0 ? s.goalKcal : tdee + s.rate * s.kcalPerKg / 7;
-  return { kcal, p: s.proteinG, f: s.fatG, c: Math.max(0, (kcal - s.proteinG * 4 - s.fatG * 9) / 4), fib: s.fiberG, tdee };
+// Poids de référence pour les objectifs en g/kg : poids tendance (lissé), mis en cache 2 s
+let _rw = { t: 0, w: null };
+function refWeight() {
+  if (Date.now() - _rw.t < 2000 && _rw.w) return _rw.w;
+  const tr = displayTrend().filter(x => x != null), lastW = Object.keys(S.days).sort().reverse().map(k => S.days[k].weight).find(w => w > 0);
+  _rw = { t: Date.now(), w: tr.length ? tr[tr.length - 1] : lastW || 70 }; return _rw.w;
+}
+function macroGrams(kcal) {
+  const s = S.settings, W = refWeight(), kg = s.macroMode !== 'g';
+  const p = kg ? +s.proteinPerKg * W : +s.proteinG, f = kg ? +s.fatPerKg * W : +s.fatG;
+  return { p, f, fib: s.fiberMode === 'kcal' ? kcal * 14 / 1000 : +s.fiberG, W };
+}
+function targetsFrom(tdee) { const s = S.settings, kcal = s.goalKcal > 0 ? s.goalKcal : tdee + s.rate * s.kcalPerKg / 7, m = macroGrams(kcal);
+  return { kcal, p: m.p, f: m.f, c: Math.max(0, (kcal - m.p * 4 - m.f * 9) / 4), fib: m.fib, tdee }; }
+// Zones de rythme en % du poids par semaine (négatif = perte)
+const RATE_MIN = -1.25, RATE_MAX = 0.75;
+function rateZone(pct) {
+  if (pct <= -1) return { l: 'À risque', c: 'var(--danger)', t: 'Perte rapide : forte perte musculaire probable, baisse de force et d’énergie en escalade, faim marquée. Seulement sur de courtes périodes.' };
+  if (pct < -0.75) return { l: 'Soutenu', c: 'var(--acc2)', t: 'Faisable quelques semaines, mais la récupération et les performances risquent d’en pâtir. Garde les protéines hautes.' };
+  if (pct <= -0.25) return { l: 'Conseillé', c: 'var(--c)', t: 'Bon compromis pour perdre du gras en gardant le muscle et la forme pour grimper.' };
+  if (pct < 0) return { l: 'Lent', c: 'var(--c)', t: 'Perte douce, idéale pour une recomposition (perdre du gras en prenant un peu de muscle).' };
+  if (pct === 0) return { l: 'Maintien', c: 'var(--c)', t: 'Poids stable : recomposition possible si l’entraînement et les protéines suivent.' };
+  if (pct <= 0.25) return { l: 'Conseillé', c: 'var(--c)', t: 'Prise de masse sèche : surtout du muscle si l’entraînement suit.' };
+  if (pct <= 0.5) return { l: 'Soutenu', c: 'var(--acc2)', t: 'La part de gras dans la prise augmente nettement.' };
+  return { l: 'À risque', c: 'var(--danger)', t: 'Prise rapide : surtout du gras, peu utile pour la performance.' };
+}
+function rateTrack() { // dégradé des zones sur la piste du curseur
+  const pos = v => ((v - RATE_MIN) / (RATE_MAX - RATE_MIN) * 100).toFixed(1) + '%', R = '#e5484d', O = '#f5a524', G = '#30a46c';
+  return `linear-gradient(90deg,${R} 0,${R} ${pos(-1)},${O} ${pos(-1)},${O} ${pos(-0.75)},${G} ${pos(-0.75)},${G} ${pos(0.25)},${O} ${pos(0.25)},${O} ${pos(0.5)},${R} ${pos(0.5)},${R} 100%)`;
 }
 function targets() {
   const T = currentTDEE(), ck = S.settings.targetMode === 'semaine' ? lastCheckin() : null;
@@ -2172,14 +2201,23 @@ async function importMF(file) {
 /* ---------- Réglages ---------- */
 function renderReglages() {
   const s = S.settings;
-  $('#main').innerHTML = `<div class="card"><h2>Objectifs</h2><div class="grid2">
-    <div><label>Rythme visé (kg/semaine)</label><input type="number" step="0.05" data-k="rate" value="${s.rate}"></div>
+  const W = refWeight(), pct0 = Math.max(RATE_MIN, Math.min(RATE_MAX, Math.round(s.rate / W * 100 / 0.05) * 0.05)), Tn = targets(), kg = s.macroMode !== 'g';
+  $('#main').innerHTML = `<div class="card"><h2>Objectifs</h2>
+    <label>Rythme visé</label>
+    <input type="range" id="rateR" min="${RATE_MIN}" max="${RATE_MAX}" step="0.05" value="${pct0}" style="width:100%;margin:10px 0 2px;--track:${rateTrack()}">
+    <div class="xs mute" style="position:relative;height:16px"><span style="position:absolute;left:0">Perte</span><span style="position:absolute;left:${(-RATE_MIN / (RATE_MAX - RATE_MIN) * 100).toFixed(1)}%;transform:translateX(-50%)">Maintien</span><span style="position:absolute;right:0">Prise</span></div>
+    <div id="rateInfo" style="margin:8px 0 12px"></div>
+    <div class="grid2">
+    <div><label>Mode des macros</label><select data-k="macroMode" data-str><option value="kg" ${kg ? 'selected' : ''}>En g/kg</option><option value="g" ${kg ? '' : 'selected'}>Grammes fixes</option></select></div>
+    <div><label>Fibres</label><select data-k="fiberMode" data-str><option value="fixe" ${s.fiberMode !== 'kcal' ? 'selected' : ''}>Quantité fixe</option><option value="kcal" ${s.fiberMode === 'kcal' ? 'selected' : ''}>14 g / 1000 kcal</option></select></div>
+    ${kg ? `<div><label>Protéines (g/kg) <span class="mute">→ ${r0(Tn.p)} g</span></label><input type="number" step="0.1" data-k="proteinPerKg" value="${s.proteinPerKg}"></div>
+    <div><label>Lipides (g/kg) <span class="mute">→ ${r0(Tn.f)} g</span></label><input type="number" step="0.1" data-k="fatPerKg" value="${s.fatPerKg}"></div>`
+    : `<div><label>Protéines (g)</label><input type="number" data-k="proteinG" value="${s.proteinG}"></div>
+    <div><label>Lipides (g)</label><input type="number" data-k="fatG" value="${s.fatG}"></div>`}
+    ${s.fiberMode === 'kcal' ? `<div><label>Fibres</label><input disabled value="${r0(Tn.fib)} g"></div>` : `<div><label>Fibres (g)</label><input type="number" data-k="fiberG" value="${s.fiberG}"></div>`}
     <div><label>Calories fixes (0 = auto)</label><input type="number" step="10" data-k="goalKcal" value="${s.goalKcal}"></div>
-    <div><label>Protéines (g)</label><input type="number" data-k="proteinG" value="${s.proteinG}"></div>
-    <div><label>Lipides (g)</label><input type="number" data-k="fatG" value="${s.fatG}"></div>
-    <div><label>Fibres (g)</label><input type="number" data-k="fiberG" value="${s.fiberG}"></div>
     <div><label>Dépense initiale (kcal)</label><input type="number" step="10" data-k="initialTDEE" value="${s.initialTDEE}"></div>
-    </div><p class="mute">Les glucides prennent le reste des calories.</p></div>
+    </div><p class="mute xs" style="margin-bottom:0">${kg ? `Calculé sur ton poids tendance (${String(r1(W)).replace('.', ',')} kg) : protéines et lipides suivent ton poids. ` : ''}Les glucides prennent le reste des calories (${r0(Tn.c)} g aujourd’hui).</p></div>
   <div class="card"><h2>Synchronisation GitHub</h2>
     <p class="mute">Tes données sont enregistrées dans un dépôt privé et partagées entre le téléphone et l’ordinateur.</p>
     <div class="grid2"><div><label>Compte</label><input data-cfg="owner" value="${esc(CFG.owner)}" autocapitalize="off"></div><div><label>Dépôt</label><input data-cfg="repo" value="${esc(CFG.repo)}" autocapitalize="off"></div></div>
@@ -2239,11 +2277,21 @@ function renderReglages() {
     $('#yes').onclick = () => { S = defaults(); save(); closeSheet(); }; $('#no').onclick = closeSheet;
   };
 }
+function bindRate() {
+  const r = $('#rateR'); if (!r) return;
+  const v0 = r.value;
+  const show = () => { const W = refWeight(), same = r.value === v0, kgw = same ? +S.settings.rate : +r.value * W / 100, pct = same ? kgw / W * 100 : +r.value, z = rateZone(Math.abs(pct) < 0.001 ? 0 : pct), d = kgw * S.settings.kcalPerKg / 7;
+    $('#rateInfo').innerHTML = `<div class="row" style="justify-content:space-between;align-items:baseline"><b style="font-size:17px">${pct > 0 ? '+' : ''}${String(r2(pct)).replace('.', ',')} %/sem · ${kgw > 0 ? '+' : ''}${String(r2(kgw)).replace('.', ',')} kg/sem</b><span class="zchip" style="background:${z.c}">${z.l}</span></div>
+      <div class="mute xs" style="margin-top:3px">${Math.abs(d) < 5 ? 'Apports = dépense' : `${d < 0 ? 'Déficit' : 'Surplus'} d’environ ${r0(Math.abs(d))} kcal/jour`} · ${z.t}</div>`; };
+  r.oninput = show; show();
+  r.onchange = () => { if (r.value === v0) return; S.settings.rate = r2(+r.value * refWeight() / 100); save(); render(); toast('Rythme enregistré'); };
+}
 function bindSettings() {
+  bindRate();
   document.querySelectorAll('[data-k]').forEach(el => el.onchange = () => {
     const k = el.dataset.k; S.settings[k] = el.hasAttribute('data-str') ? el.value.trim() : (num(el.value) ?? 0); save();
     if (k === 'targetMode' && S.settings.targetMode === 'semaine' && !lastCheckin()) { doCheckin(); toast('Objectifs figés jusqu’au prochain check-in'); render(); return; }
-    if (k === 'targetMode' || k === 'checkinDay') { render(); return; }
+    if (['targetMode', 'checkinDay', 'macroMode', 'fiberMode', 'proteinPerKg', 'fatPerKg'].includes(k)) { render(); return; }
     if (k === 'measDay' || k === 'measTime') { scheduleReminder(true).then(() => { if (tab === 'reglages') render(); }); return; }
     if (tab === 'depense') render(); else toast('Enregistré');
   });
