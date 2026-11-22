@@ -569,6 +569,16 @@ function bindWeek() {
   document.querySelectorAll('[data-day]').forEach(b => b.onclick = () => { if (selMode) exitSel(false); cur = b.dataset.day; render(); });
   document.querySelectorAll('[data-wk]').forEach(b => b.onclick = () => { if (selMode) exitSel(false); cur = addDays(cur, +b.dataset.wk); render(); });
 }
+// Jauge « restant » : des points de couleur pour ce qui reste, qui s'éteignent au fur et à mesure qu'on mange
+function ringDots(v, max, color, size, n = 20) {
+  const c = size / 2, r = size / 2 - 4, left = max > 0 ? Math.max(0, Math.min(1, (max - v) / max)) : 0, on = Math.round(left * n);
+  let g = '';
+  for (let i = 0; i < n; i++) {
+    const a = -Math.PI / 2 + i / n * 2 * Math.PI, x = (c + r * Math.cos(a)).toFixed(1), y = (c + r * Math.sin(a)).toFixed(1);
+    g += `<circle cx="${x}" cy="${y}" r="${i < on ? 2.9 : 1.6}" style="fill:${i < on ? color : 'var(--line)'}"/>`;
+  }
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">${g}</svg>`;
+}
 function ring(v, max, color, size, sw) {
   const r = (size - sw) / 2, C = 2 * Math.PI * r, p = max > 0 ? Math.min(1, v / max) : 0, c = size / 2;
   return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${c}" cy="${c}" r="${r}" style="fill:none;stroke:var(--line);stroke-width:${sw}"/>` +
@@ -579,7 +589,7 @@ function renderJournal() {
   const nUnk = d ? d.entries.filter(fibUnknown).length : 0;
   const mac = (lbl, v, max, col) => `<div class="mac"><div class="ring-s">${ring(v, max, col, 60, 6)}<div class="ring-in"><b>${r0(v)}${lbl === 'Fibres' && nUnk ? '<span style="color:var(--fib)">?</span>' : ''}</b></div></div><div class="mac-l">${lbl}</div><div class="mute xs">/ ${r0(max)} g</div></div>`;
   // Même jauge, mais le chiffre au centre indique ce qu'il reste (en rouge avec un + si l'objectif est dépassé)
-  const macR = (lbl, v, max, col) => { const left = max - v; return `<div class="mac"><div class="ring-s">${ring(v, max, col, 60, 6)}<div class="ring-in"><b style="${left < 0 ? 'color:var(--danger)' : ''}">${left < 0 ? '+' + r0(-left) : r0(left)}</b></div></div><div class="mac-l">${lbl}</div><div class="mute xs">${left < 0 ? 'en trop' : 'restants'}</div></div>`; };
+  const macR = (lbl, v, max, col) => { const left = max - v; return `<div class="mac"><div class="ring-s">${ringDots(v, max, col, 60)}<div class="ring-in"><b style="${left < 0 ? 'color:var(--danger)' : ''}">${left < 0 ? '+' + r0(-left) : r0(left)}</b></div></div><div class="mac-l">${lbl}</div><div class="mute xs">${left < 0 ? 'en trop' : 'restants'}</div></div>`; };
   let h = weekStrip() + `<div class="card">
     <div class="hero-top">
       <div class="ring-b">${ring(t.kcal, T.kcal, 'var(--kcal)', 136, 12)}<div class="ring-in"><span class="big">${r0(Math.abs(left))}</span><span class="mute xs">${left < 0 ? 'kcal en trop' : 'restantes'}</span></div></div>
