@@ -756,23 +756,29 @@ function openNutTop(n, ents, nd) {
 }
 async function estimateMicrosAI(miss) {
   if (!S.settings.apiKey) return toast('Ajoute ta clé API dans Réglages → Photo IA');
-  const names = [...new Map(miss.map(e => [norm(e.name), e.name])).values()].slice(0, 40);
-  const btn = $('#estM'); if (btn) { btn.disabled = true; btn.textContent = 'Estimation en cours…'; }
-  try {
-    const txt = await askAI([{ type: 'text', text: `Tu es nutritionniste. Pour chacun de ces aliments, donne les valeurs POUR 100 g (table Ciqual si possible) : kcal et micronutriments (sucres et AG saturés en g, sodium en mg, etc.).
+  const names = [...new Map(miss.map(e => [norm(e.name), e.name])).values()];
+  const btn = $('#estM'); if (btn) btn.disabled = true;
+  S.microCache = S.microCache || {}; let n = 0, fails = 0;
+  const apply = by => { for (const e of miss) {
+    if (e.m) continue; const v = by[norm(e.name)]; if (!v) continue; const m100 = aiMicros(v.micro || v); if (!m100) continue;
+    S.microCache[norm(e.name)] = m100;
+    const g = e.grams > 0 ? e.grams : num(v.kcal) > 0 ? e.kcal / num(v.kcal) * 100 : null; if (!g) continue;
+    e.m = mulM(m100, g / 100); e.mEst = true; if (e.per && !e.per.m) e.per = { ...e.per, m: m100 }; n++; } };
+  // Par lots de 10 : une réponse trop longue serait coupée et le JSON illisible
+  for (let i = 0; i < names.length; i += 10) {
+    const part = names.slice(i, i + 10);
+    if (btn) btn.textContent = `Estimation… ${Math.min(i + 10, names.length)}/${names.length}`;
+    try {
+      const txt = await askAI([{ type: 'text', text: `Tu es nutritionniste. Pour chacun de ces aliments, donne les valeurs POUR 100 g (table Ciqual si possible) : kcal et micronutriments (sucres et AG saturés en g, sodium en mg, etc.). Nombres uniquement, pas de commentaire.
 Aliments :
-${names.map(n => '- ' + n).join('\n')}
-Réponds UNIQUEMENT avec un objet JSON associant chaque nom exact à ses valeurs : {"nom": {"kcal":0,"micro":${AI_MICRO}}}` }], 4000);
-    const o = cutJSON(txt, '{', '}'), by = {}; for (const [k, v] of Object.entries(o)) by[norm(k)] = v;
-    S.microCache = S.microCache || {}; let n = 0;
-    for (const e of miss) {
-      const v = by[norm(e.name)]; if (!v) continue; const m100 = aiMicros(v.micro); if (!m100) continue;
-      S.microCache[norm(e.name)] = m100;
-      const g = e.grams > 0 ? e.grams : num(v.kcal) > 0 ? e.kcal / num(v.kcal) * 100 : null; if (!g) continue;
-      e.m = mulM(m100, g / 100); e.mEst = true; if (e.per && !e.per.m) e.per = { ...e.per, m: m100 }; n++;
-    }
-    save(); render(); toast(`${n} aliment${n > 1 ? 's' : ''} complété${n > 1 ? 's' : ''} (estimation IA)`);
-  } catch (err) { toast('Estimation impossible : ' + err.message, 4000); if (btn) { btn.disabled = false; btn.textContent = 'Estimer avec l’IA'; } }
+${part.map(x => '- ' + x).join('\n')}
+Réponds UNIQUEMENT avec un objet JSON compact associant chaque nom exact à ses valeurs : {"nom": {"kcal":0,"micro":${AI_MICRO}}}` }], 4000);
+      const o = parseAIJSON(txt, '{', '}'), by = {}; for (const [k, v] of Object.entries(o)) by[norm(k)] = v;
+      apply(by); save();
+    } catch (err) { fails++; console.log('estimation micros', err); }
+  }
+  render();
+  toast(fails && !n ? 'Estimation impossible : réponse de l’IA illisible, réessaie' : `${n} aliment${n > 1 ? 's' : ''} complété${n > 1 ? 's' : ''} (estimation IA)${fails ? ` · ${fails} lot${fails > 1 ? 's' : ''} en échec, relance pour finir` : ''}`, 4000);
 }
 const TABS = { journal: 'Journal', poids: 'Poids', depense: 'Dépense', nutri: 'Nutriments', bilan: 'Bilan', reglages: 'Réglages' };
 
@@ -1356,6 +1362,13 @@ async function askAI(content, maxTokens = 2000) {
   return (j.content || []).map(c => c.text || '').join('');
 }
 const cutJSON = (txt, a, b) => JSON.parse(txt.slice(txt.indexOf(a), txt.lastIndexOf(b) + 1));
+// Version tolérante : retire les blocs ```json, les virgules finales et les nombres écrits « 1,5 »
+function parseAIJSON(txt, a, b) {
+  let t = String(txt).replace(/```(json)?/gi, ''); t = t.slice(t.indexOf(a), t.lastIndexOf(b) + 1);
+  try { return JSON.parse(t); } catch (e) {}
+  t = t.replace(/,\s*([}\]])/g, '$1').replace(/:\s*(-?\d+),(\d+)/g, ':$1.$2').replace(/:\s*(null|NaN|undefined)\b/g, ':null');
+  return JSON.parse(t);
+}
 const AI_MK = { sucres: 'sug', ags: 'sat', sodium_mg: 'na', potassium_mg: 'kal', calcium_mg: 'ca', magnesium_mg: 'mgn', fer_mg: 'fe', zinc_mg: 'zn', vitA_ug: 'vA', vitC_mg: 'vC', vitD_ug: 'vD', vitE_mg: 'vE', b9_ug: 'b9', b12_ug: 'b12', omega3_g: 'o3' };
 const AI_MICRO = '{' + Object.keys(AI_MK).map(k => `"${k}":0`).join(',') + '}';
 const AI_ITEM = '{"nom":"…","grammes":0,"kcal":0,"proteines":0,"glucides":0,"lipides":0,"fibres":0,"nova":1,"micro":' + AI_MICRO + '}';
