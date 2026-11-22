@@ -278,7 +278,7 @@ function defaults() {
       smooth: 0.9,          // lissage de la dépense (0 = aucun)
       kcalPerKg: 7000,      // réglages calés sur l'historique MacroFactor (écart moyen ≈ 38 kcal)
       apiKey: '', model: 'claude-sonnet-5-5',
-      measDay: 0, measTime: '09:00', journalView: 'repas' // rappel mensurations : 0 = dimanche, 6 = samedi, -1 = désactivé
+      measDay: 0, measTime: '09:00', journalView: 'repas', targetMode: 'jour', checkinDay: 0 // rappel mensurations : 0 = dimanche, 6 = samedi, -1 = désactivé
     },
     days: {},   // 'AAAA-MM-JJ' -> {entries:[], weight:null}
     foods: [],  // mes aliments : {id,name,code,per:{kcal,p,c,f,fib},serving}
@@ -290,7 +290,7 @@ function defaults() {
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY));
-    if (s) { const d = defaults(); s.settings = { ...d.settings, ...s.settings }; s.days = s.days || {}; s.foods = s.foods || []; s.mf = s.mf || {}; s.recipes = s.recipes || []; s.meals = s.meals || []; s.aiUsage = s.aiUsage || {}; return s; }
+    if (s) { const d = defaults(); s.settings = { ...d.settings, ...s.settings }; s.days = s.days || {}; s.foods = s.foods || []; s.mf = s.mf || {}; s.recipes = s.recipes || []; s.meals = s.meals || []; s.aiUsage = s.aiUsage || {}; s.checkins = s.checkins || []; return s; }
   } catch (e) {}
   return defaults();
 }
@@ -330,7 +330,7 @@ async function ghPut(path, obj, sha, message) {
 }
 const dayUsed = d => d && (d.entries.length || d.weight != null || d.bf != null || d.steps != null || (d.meas && Object.keys(d.meas).length));
 function localMonth(m) { const o = {}; for (const [k, d] of Object.entries(S.days)) if (k.startsWith(m) && dayUsed(d)) o[k] = d; return o; }
-function profil() { const { apiKey, ...settings } = S.settings; return { version: 1, settings, foods: S.foods, recipes: S.recipes, meals: S.meals, mf: S.mf, aiUsage: S.aiUsage || {} }; }
+function profil() { const { apiKey, ...settings } = S.settings; return { version: 1, settings, foods: S.foods, recipes: S.recipes, meals: S.meals, mf: S.mf, aiUsage: S.aiUsage || {}, checkins: S.checkins || [] }; }
 let syncTimer = null, syncing = false, syncAgain = false;
 function scheduleSync(ms = 2000) { if (!CFG.token) return; clearTimeout(syncTimer); syncTimer = setTimeout(sync, ms); }
 function setSync(state, text) {
@@ -382,7 +382,7 @@ async function syncProfil(remoteSha) {
   const g = await ghGet(path); if (!g) return;
   const p = g.json || {};
   S.settings = { ...S.settings, ...(p.settings || {}), apiKey: S.settings.apiKey };
-  S.foods = p.foods || S.foods; S.mf = p.mf || S.mf; S.recipes = p.recipes || S.recipes; S.meals = p.meals || S.meals; S.aiUsage = p.aiUsage || S.aiUsage || {};
+  S.foods = p.foods || S.foods; S.mf = p.mf || S.mf; S.recipes = p.recipes || S.recipes; S.meals = p.meals || S.meals; S.aiUsage = p.aiUsage || S.aiUsage || {}; S.checkins = p.checkins || S.checkins || [];
   META.sha[path] = g.sha; META.base[path] = JSON.stringify(profil());
 }
 async function sync() {
@@ -496,11 +496,36 @@ function currentTDEE() {
 // Poids tendance affiché : lissage plus réactif (proche de celui de MacroFactor) ; l'algorithme de dépense garde son propre réglage.
 const DISPLAY_ALPHA = 0.25;
 function displayTrend() { const ser = series(); return ser ? run(ser, { ...S.settings, alpha: DISPLAY_ALPHA }).trend : []; }
+// Objectifs : en mode hebdomadaire, la dépense est figée à celle du dernier check-in ;
+// le rythme visé, les protéines et les lipides des réglages s'appliquent toujours dessus.
+const lastCheckin = () => (S.checkins || []).slice().sort((a, b) => a.date.localeCompare(b.date)).pop() || null;
+function targetsFrom(tdee) {
+  const s = S.settings, kcal = s.goalKcal > 0 ? s.goalKcal : tdee + s.rate * s.kcalPerKg / 7;
+  return { kcal, p: s.proteinG, f: s.fatG, c: Math.max(0, (kcal - s.proteinG * 4 - s.fatG * 9) / 4), fib: s.fiberG, tdee };
+}
 function targets() {
-  const s = S.settings, T = currentTDEE();
-  const kcal = s.goalKcal > 0 ? s.goalKcal : T.tdee + s.rate * s.kcalPerKg / 7;
-  const carbs = Math.max(0, (kcal - s.proteinG * 4 - s.fatG * 9) / 4);
-  return { kcal, p: s.proteinG, f: s.fatG, c: carbs, fib: s.fiberG, tdee: T.tdee, auto: T.auto };
+  const T = currentTDEE(), ck = S.settings.targetMode === 'semaine' ? lastCheckin() : null;
+  return { ...targetsFrom(ck ? ck.tdee : T.tdee), auto: T.auto, live: T.tdee, weekly: !!ck, ckDate: ck && ck.date };
+}
+function checkinDue() {
+  if (S.settings.targetMode !== 'semaine') return null;
+  const t = today(), dow = new Date(t + 'T12:00:00').getDay(), back = (dow - (+S.settings.checkinDay) + 7) % 7, due = addDays(t, -back);
+  const ck = lastCheckin(); return !ck || ck.date < due ? due : null;
+}
+function doCheckin() {
+  const T = currentTDEE(), nt = targetsFrom(T.tdee);
+  S.checkins = (S.checkins || []).filter(c => c.date !== today());
+  S.checkins.push({ date: today(), tdee: Math.round(T.tdee), kcal: Math.round(nt.kcal) }); save();
+}
+function checkinCard() {
+  if (cur !== today() || !checkinDue()) return '';
+  const old = lastCheckin(), T = currentTDEE(), nt = targetsFrom(T.tdee), ot = old ? targetsFrom(old.tdee) : null;
+  const arrow = (a, b) => a == null ? `<b>${r0(b)}</b>` : `${r0(a)} → <b>${r0(b)}</b>`;
+  return `<div class="card remind"><div style="font-weight:800;font-size:16px">Point de la semaine</div>
+    <div class="mute xs" style="margin:2px 0 8px">Nouvelle estimation à partir de ta semaine. Les objectifs restent ensuite fixes jusqu’au prochain check-in.</div>
+    <table><tr><td>Dépense estimée</td><td>${arrow(ot && ot.tdee, nt.tdee)} kcal</td></tr><tr><td>Objectif calorique</td><td>${arrow(ot && ot.kcal, nt.kcal)} kcal</td></tr>
+    <tr><td>Protéines · lipides · glucides</td><td>${r0(nt.p)} · ${r0(nt.f)} · <b>${r0(nt.c)}</b> g</td></tr></table>
+    <button class="btn pri sm" id="doCk" style="margin-top:10px">Valider le check-in</button></div>`;
 }
 function compareMF(ser, res) {
   let n = 0, ae = 0, b = 0;
@@ -606,7 +631,7 @@ function renderJournal() {
   </div>
   <div class="card wcard2"><div><div style="font-weight:700">Poids du matin</div><div class="mute xs">${(() => { const tt = displayTrend(), tr = tt.length ? tt[tt.length - 1] : null; return tr != null ? 'Tendance ' + r1(tr) + ' kg' : 'Pèse-toi au réveil'; })()}</div></div>
     <div class="pill-in sm"><input id="wIn" type="number" step="0.1" inputmode="decimal" placeholder="—" value="${d && d.weight != null ? d.weight : ''}"><span class="mute">kg</span></div>
-    <div class="pill-in sm"><input id="bfIn" type="number" step="0.1" inputmode="decimal" placeholder="—" value="${d && d.bf != null ? d.bf : ''}"><span class="mute">%</span></div></div>${updateCard()}${reminderCard()}<!--FIB-->`;
+    <div class="pill-in sm"><input id="bfIn" type="number" step="0.1" inputmode="decimal" placeholder="—" value="${d && d.bf != null ? d.bf : ''}"><span class="mute">%</span></div></div>${updateCard()}${checkinCard()}${reminderCard()}<!--FIB-->`;
   const chipsOf = list => { const t2 = { kcal: 0, p: 0, c: 0, f: 0 }; for (const [e] of list) for (const x in t2) t2[x] += +e[x] || 0; return t2; };
   const head = (title, list, menu, hour) => { const tt = chipsOf(list); return `<div class="meal"><div class="meal-h"><span class="row" style="gap:8px">${title}${hour ? `<button class="mbtn hplus" data-hplus="${hour}" aria-label="Ajouter à ${+hour} h">+</button>` : ''}</span><span class="row" style="gap:10px">${list.length ? `<span class="mh-tot"><b>${r0(tt.kcal)}</b> kcal<span class="chips"><span style="color:var(--p)">${r0(tt.p)}P</span><span style="color:var(--f)">${r0(tt.f)}L</span><span style="color:var(--c)">${r0(tt.c)}G</span></span></span>` : ''}${menu && list.length ? `<button class="mbtn" data-mm="${esc(menu)}" aria-label="Options du repas">⋯</button>` : ''}</span></div><div class="card list">`; };
   const row = (e, i, sub) => `<div class="entry${selMode && sel.has(e.id) ? ' on' : ''}" data-i="${i}" data-id="${esc(e.id)}"><div class="irow"><button class="pick" data-pick="${esc(e.id)}" aria-label="Sélectionner">${selMode ? '<span class="ck">✓</span>' : fi(e.name, !!e.recipeId)}</button><div><div class="e-name">${esc(e.name)}</div> <div class="mute xs">${sub}${qBadge(e)}${fibUnknown(e) ? '<span style="color:var(--fib);font-weight:600">fibres ? · </span>' : ''}${e.grams ? r0(e.grams) + ' g' : 'portion'}${e.src === 'photo' ? ' · photo IA' : e.src === 'describe' ? ' · décrit (IA)' : ''}</div></div></div>
@@ -649,6 +674,7 @@ function renderJournal() {
   $('#wIn').onchange = e => { const v = num(e.target.value); day(cur).weight = v; save(); toast(v == null ? 'Pesée effacée' : 'Poids enregistré'); render(); };
   $('#bfIn').onchange = e => { const v = num(e.target.value); day(cur).bf = v; save(); toast(v == null ? 'Masse grasse effacée' : 'Masse grasse enregistrée'); render(); };
   if ($('#doUpd')) $('#doUpd').onclick = doUpdate;
+  if ($('#doCk')) $('#doCk').onclick = () => { doCheckin(); toast('Check-in validé : objectifs mis à jour pour la semaine'); render(); };
   if ($('#goMeas')) $('#goMeas').onclick = () => { tab = 'poids'; cur = today(); render(); setTimeout(() => { const el = document.getElementById('measCard'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }, 50); };
   const toggle = id => { if (!selMode) { selMode = true; sel = new Set(); } sel.has(id) ? sel.delete(id) : sel.add(id); if (!sel.size) return exitSel(); render(); };
   document.querySelectorAll('#main .entry').forEach(el => {
@@ -1679,6 +1705,7 @@ function renderBilan() {
       ${st.q.nsKnown ? `<p class="mute xs" style="margin:8px 0 0">Nutri-Score (produits notés) : ${r0(st.q.nsGood / st.q.nsKnown * 100)} % des calories en A ou B, ${r0(st.q.nsBad / st.q.nsKnown * 100)} % en D ou E.</p>` : ''}
       <p class="mute xs" style="margin:6px 0 0">Calculé sur les aliments saisis dans Nutrition depuis le 19 novembre (l’historique MacroFactor est exclu). Les notes viennent d’Open Food Facts et des aliments de base ; les autres (photo, recettes, aliments repris de MacroFactor) restent « inconnus » tant qu’ils ne sont pas estimés.</p>
       ${pc(st.q.nUnk) > 15 ? `<button class="btn sm" id="estNova" style="margin-top:8px">Estimer les aliments inconnus avec l’IA</button>` : ''}</div>` : `<div class="card"><h2>Qualité des aliments</h2><p class="mute" style="margin:0">Disponible pour les repas saisis dans Nutrition (depuis le 19 novembre) : l’historique MacroFactor n’a pas ces notes.</p></div>`}
+    ${(S.checkins || []).length ? `<div class="card"><h2>Check-ins</h2><table><tr><th>Date</th><th>Dépense</th><th>Objectif</th></tr>${S.checkins.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 8).map(c => `<tr><td>${fmtDate(c.date)}</td><td>${c.tdee}</td><td>${c.kcal}</td></tr>`).join('')}</table></div>` : ''}
     <div class="card"><h2>Conseils de la semaine</h2>${tips.length ? tips.map(([i, t]) => `<div class="tip"><span>${i}</span><span>${t}</span></div>`).join('') : '<p class="mute" style="margin:0">Rien à signaler.</p>'}
       <p class="mute xs" style="margin:8px 0 0">Repères généraux de nutrition sportive, pas un avis médical.</p></div>`;
   $('#bPrev').onclick = () => { bilanOff++; render(); };
@@ -1917,6 +1944,10 @@ function renderReglages() {
   ${NATIVE ? `<div class="card"><h2>Appli Android</h2><p class="mute" style="margin-top:0">Version installée : ${UPD.installed ? '1.' + UPD.installed : esc(UPD.name || '?')}${UPD.latest ? ' · dernière publiée : 1.' + UPD.latest : ''}</p>
     <div class="row wrap">${updAvailable() ? '<button class="btn pri" id="doUpd2">Mettre à jour</button>' : ''}<button class="btn" id="chkUpd">Vérifier les mises à jour</button></div>
     <p class="mute xs" style="margin-bottom:0">Les améliorations de l’appli arrivent toutes seules. Une réinstallation n’est demandée que pour les changements de la partie Android.</p></div>` : ''}
+  <div class="card"><h2>Mise à jour des objectifs</h2>
+    <div class="grid2"><div><label>Fréquence</label><select data-k="targetMode" data-str><option value="jour" ${s.targetMode !== 'semaine' ? 'selected' : ''}>Chaque jour</option><option value="semaine" ${s.targetMode === 'semaine' ? 'selected' : ''}>Check-in hebdomadaire</option></select></div>
+    <div><label>Jour du check-in</label><select data-k="checkinDay">${[0, 1, 2, 3, 4, 5, 6].map(d => `<option value="${d}" ${+s.checkinDay === d ? 'selected' : ''}>${DAYS_FR[d][0].toUpperCase() + DAYS_FR[d].slice(1)}</option>`).join('')}</select></div></div>
+    <p class="mute xs" style="margin-bottom:0">${s.targetMode === 'semaine' ? `Objectifs figés depuis le dernier check-in${lastCheckin() ? ' (' + fmtDate(lastCheckin().date).toLowerCase() + ', dépense ' + lastCheckin().tdee + ' kcal)' : ''}. Une carte « Point de la semaine » apparaît le ${DAYS_FR[+s.checkinDay]} dans le journal.` : 'La dépense et l’objectif sont recalculés chaque jour (calcul lissé, variations faibles).'}</p></div>
   <div class="card"><h2>Affichage du journal</h2>
     <select data-k="journalView" data-str><option value="repas" ${s.journalView !== 'heure' ? 'selected' : ''}>Par repas</option><option value="heure" ${s.journalView === 'heure' ? 'selected' : ''}>Par heure</option></select>
     <p class="mute xs" style="margin-bottom:0">Le total des calories et des macros s’affiche en face de chaque repas ou de chaque heure.</p></div>
@@ -1967,6 +1998,8 @@ function renderReglages() {
 function bindSettings() {
   document.querySelectorAll('[data-k]').forEach(el => el.onchange = () => {
     const k = el.dataset.k; S.settings[k] = el.hasAttribute('data-str') ? el.value.trim() : (num(el.value) ?? 0); save();
+    if (k === 'targetMode' && S.settings.targetMode === 'semaine' && !lastCheckin()) { doCheckin(); toast('Objectifs figés jusqu’au prochain check-in'); render(); return; }
+    if (k === 'targetMode' || k === 'checkinDay') { render(); return; }
     if (k === 'measDay' || k === 'measTime') { scheduleReminder(true).then(() => { if (tab === 'reglages') render(); }); return; }
     if (tab === 'depense') render(); else toast('Enregistré');
   });
