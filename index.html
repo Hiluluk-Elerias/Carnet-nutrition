@@ -89,6 +89,7 @@ button{font:inherit;cursor:pointer}
 .segm{display:flex;background:var(--card2);border-radius:12px;padding:3px;margin-bottom:12px}.segm button{flex:1;border:0;background:none;padding:8px 0;border-radius:10px;font-weight:600;color:var(--mute);font-size:14px}.segm button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
 .npick{margin-top:12px;padding-top:6px;border-top:1px solid var(--line)}.ng{margin-top:8px}.ng b{font-size:12.5px;color:var(--mute);font-weight:600}.nch{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:6px 10px;font-size:13px;margin:5px 5px 0 0}.nch.on{background:color-mix(in srgb,var(--acc) 14%,transparent);border-color:var(--acc);color:var(--acc);font-weight:600}
 .ngh{font-size:12px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.04em;margin:16px 0 2px}.nrow{padding:8px 0;border-bottom:1px solid var(--line)}.nrow:last-child{border-bottom:0}.nl{display:flex;justify-content:space-between;gap:8px;font-size:14.5px;align-items:baseline}.nv{text-align:right;white-space:nowrap}.np{font-size:12.5px;margin-left:4px}
+.alr{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}.alr:last-of-type{border-bottom:0}.ald{flex:none;width:9px;height:9px;border-radius:50%;margin-top:6px}.alban{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:0;font:inherit;color:var(--ink);padding:12px 16px}
 .grid5{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
 .grid5 input{padding:10px 4px;text-align:center}
 input,select,textarea{font:inherit;padding:11px 12px;border:1px solid transparent;border-radius:12px;background:var(--card2);color:var(--ink);width:100%;outline:none}
@@ -633,6 +634,51 @@ const IC = {
   describe: ic('<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>'),
   recipe: ic('<path d="M4 11h16a8 8 0 0 1-16 0z"/><path d="M8 7c0-1.5 1-2 1-3M12 7c0-1.5 1-2 1-3M16 7c0-1.5 1-2 1-3"/>')
 };
+/* ---------- Alertes micronutriments ---------- */
+// Conseils de sources alimentaires (manque) ou d'aliments à surveiller (excès)
+const NUT_TIP = {
+  kal: 'fruits et légumes, légumineuses, pommes de terre, banane, fruits secs', ca: 'laitages, fromage, eaux riches en calcium (Hépar, Contrex, Courmayeur), tofu, amandes',
+  mgn: 'oléagineux, chocolat noir, légumineuses, céréales complètes, eaux riches en magnésium (Hépar, Rozana)', fe: 'viande rouge, boudin noir, lentilles, pois chiches, avec de la vitamine C au même repas (le thé et le café freinent l’absorption)',
+  zn: 'viande, fruits de mer, fromage, graines de courge, oléagineux', ph: 'laitages, poisson, viande, légumineuses', cu: 'oléagineux, chocolat noir, abats, légumineuses',
+  mn: 'céréales complètes, oléagineux, thé, légumineuses', se: 'noix du Brésil (1 à 2 suffisent), poisson, œufs', vA: 'carotte, patate douce, légumes verts, œufs, beurre',
+  b1: 'porc, céréales complètes, légumineuses', b2: 'laitages, œufs, champignons, amandes', b3: 'volaille, poisson, viande', b5: 'œufs, champignons, avocat, volaille',
+  b6: 'volaille, poisson, banane, pomme de terre, pois chiches', b9: 'légumes verts à feuilles, légumineuses, agrumes, avocat', b12: 'viande, poisson, œufs, laitages (complément si alimentation végétale)',
+  vC: 'kiwi, agrumes, poivron, fruits rouges, chou, brocoli', vD: 'poissons gras (sardine, maquereau, saumon), œufs ; en hiver le soleil n’en fournit presque plus, un dosage chez le médecin peut valoir le coup',
+  vE: 'huiles végétales (colza, tournesol), oléagineux, graines', vK: 'légumes verts à feuilles, choux, brocoli', chl: 'œufs, viande, poisson, légumineuses',
+  ala: 'huile de colza, noix, graines de lin ou de chia', dha: 'poissons gras 1 à 2 fois par semaine (sardine, maquereau, saumon, hareng)', o6: 'huiles végétales, oléagineux, graines',
+  sel: 'pain, fromage, charcuterie, plats préparés, sauces, biscuits apéritifs', sug: 'boissons sucrées, jus, desserts, biscuits, confiseries', sugA: 'boissons sucrées, desserts, céréales du petit-déjeuner, biscuits',
+  sat: 'beurre, fromage, charcuterie, viennoiseries, crème', caf: 'café, thé, sodas au cola, boissons énergisantes'
+};
+// Limites hautes de sécurité (EFSA) pour des nutriments qu'on cherche à atteindre
+const NUT_UL = { vA: 3000, vD: 100, vE: 300, b6: 12, zn: 25, se: 255, ca: 2500, cu: 5, fe: 45 };
+function nutAlerts() {
+  const t = today(), days = [...Array(7)].map((_, i) => addDays(t, -1 - i)).filter(hasIntake);
+  if (days.length < 3) return { days, list: [] };
+  const { out } = nutStats(days), T = targets(), list = [];
+  for (const n of NUT) {
+    if (n.k === 'na') continue; // déjà couvert par le sel
+    const o = out[n.k], ref = nutRef(n, T), ul = NUT_UL[n.k]; if (!o || o.cov < 0.8) continue; // trop peu de données : pas d'alerte
+    const pct = ref > 0 ? o.avg / ref * 100 : null;
+    if (ul && o.avg > ul) list.push({ n, o, lvl: 2, hi: true, txt: `${fmtN(o.avg)} ${n.u}/j, au-dessus de la limite de sécurité (${fmtN(ul)} ${n.u})` });
+    else if (n.t === 'min' && pct != null && pct < 66) list.push({ n, o, lvl: pct < 40 ? 2 : 1, txt: `${fmtN(o.avg)} ${n.u}/j, ${r0(pct)} % du repère (${fmtN(ref)} ${n.u})` });
+    else if (n.t === 'max' && pct != null && pct > 100) list.push({ n, o, lvl: pct > 150 ? 2 : 1, hi: true, txt: `${fmtN(o.avg)} ${n.u}/j, ${r0(pct)} % de la limite (${fmtN(ref)} ${n.u})` });
+  }
+  list.sort((a, b) => b.lvl - a.lvl || (a.hi ? -1 : 1));
+  return { days, list };
+}
+function alertsCard(A) {
+  if (!A.list.length) return A.days.length >= 3 ? `<div class="card"><h2>Points de vigilance</h2><p class="mute" style="margin:4px 0 0">Rien à signaler sur les ${A.days.length} derniers jours pour les nutriments suffisamment renseignés.</p></div>` : '';
+  return `<div class="card"><h2>Points de vigilance</h2><div class="mute xs" style="margin-bottom:6px">Moyenne des ${A.days.length} derniers jours complets</div>
+    ${A.list.map(a => `<div class="alr"><span class="ald" style="background:${a.lvl === 2 ? 'var(--danger)' : 'var(--acc2)'}"></span><div><b>${esc(a.n.l)} ${a.hi ? 'trop élevé' : a.lvl === 2 ? 'très bas' : 'un peu bas'}</b><div class="mute xs">${a.txt}${a.o.cov < 0.95 ? ' · données partielles' : ''}</div>${NUT_TIP[a.n.k] ? `<div class="xs" style="margin-top:3px">${a.hi ? 'À surveiller' : 'Sources'} : ${NUT_TIP[a.n.k]}</div>` : ''}</div></div>`).join('')}
+    <label class="row" style="color:var(--ink);font-size:13.5px;margin-top:10px"><input type="checkbox" id="alJ" ${S.settings.nutriAlertJ === false ? '' : 'checked'}> Signaler dans le journal</label>
+    <p class="mute xs" style="margin:6px 0 0">Repères pour la population générale, pas un avis médical. Un manque qui dure plusieurs semaines mérite d’en parler à ton médecin.</p></div>`;
+}
+function alertBanner() {
+  if (S.settings.nutriAlertJ === false || cur !== today()) return '';
+  const A = nutAlerts(); if (!A.list.length) return '';
+  const red = A.list.some(a => a.lvl === 2), names = A.list.slice(0, 3).map(a => a.n.l.toLowerCase() + (a.hi ? ' ↑' : ' ↓')).join(', ');
+  return `<button class="card alban" id="alGo"><span class="ald" style="background:${red ? 'var(--danger)' : 'var(--acc2)'}"></span><span><b>${A.list.length} point${A.list.length > 1 ? 's' : ''} de vigilance</b><span class="mute xs" style="display:block">${esc(names)}${A.list.length > 3 ? '…' : ''}</span></span><span class="mute" style="margin-left:auto">›</span></button>`;
+}
 /* ---------- Onglet Nutriments ---------- */
 let nutriPer = '7', nutriPick = false;
 const fmtN = v => v == null ? '–' : Math.abs(v) >= 100 ? r0(v).toLocaleString('fr-FR') : Math.abs(v) >= 10 ? String(r1(v)).replace('.', ',') : String(r2(v)).replace('.', ',');
@@ -657,6 +703,7 @@ function renderNutri() {
   const per = nutriPer === 'jour' ? fmtDate(cur) : `moyenne des ${days.length} derniers jours saisis`;
   let h = `<div class="segm">${[['jour', 'Jour'], ['7', '7 jours'], ['30', '30 jours']].map(([v, l]) => `<button data-per="${v}" class="${nutriPer === v ? 'on' : ''}">${l}</button>`).join('')}</div>`;
   if (nutriPer === 'jour') h += weekStrip();
+  h += alertsCard(nutAlerts());
   h += `<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><div><h2 style="margin:0">Nutriments</h2><div class="mute xs">${esc(per)}</div></div>
     <button class="btn sm" id="pickN">${nutriPick ? 'Fermer ▴' : `Choisir (${shown.length}) ▾`}</button></div>`;
   if (nutriPick) {
@@ -696,6 +743,7 @@ function renderNutri() {
   if ($('#nDef')) { $('#nDef').onclick = () => setShown(null); $('#nAll').onclick = () => setShown(NUT_ALL.map(n => n.k)); $('#nNone').onclick = () => setShown(MACRO_ROWS.map(n => n.k)); }
   document.querySelectorAll('[data-nrow]').forEach(el => el.onclick = () => openNutTop(NUT_BY[el.dataset.nrow], ents, days.length));
   if ($('#estM')) $('#estM').onclick = () => estimateMicrosAI(miss);
+  if ($('#alJ')) $('#alJ').onchange = () => { S.settings.nutriAlertJ = $('#alJ').checked; save(); };
 }
 function openNutTop(n, ents, nd) {
   const agg = {};
@@ -790,7 +838,7 @@ function renderJournal() {
   </div>
   <div class="card wcard2"><div><div style="font-weight:700">Poids du matin</div><div class="mute xs">${(() => { const tt = displayTrend(), tr = tt.length ? tt[tt.length - 1] : null; return tr != null ? 'Tendance ' + r1(tr) + ' kg' : 'Pèse-toi au réveil'; })()}</div></div>
     <div class="pill-in sm"><input id="wIn" type="number" step="0.1" inputmode="decimal" placeholder="—" value="${d && d.weight != null ? d.weight : ''}"><span class="mute">kg</span></div>
-    <div class="pill-in sm"><input id="bfIn" type="number" step="0.1" inputmode="decimal" placeholder="—" value="${d && d.bf != null ? d.bf : ''}"><span class="mute">%</span></div></div>${updateCard()}${checkinCard()}${reminderCard()}<!--FIB-->`;
+    <div class="pill-in sm"><input id="bfIn" type="number" step="0.1" inputmode="decimal" placeholder="—" value="${d && d.bf != null ? d.bf : ''}"><span class="mute">%</span></div></div>${updateCard()}${checkinCard()}${alertBanner()}${reminderCard()}<!--FIB-->`;
   const chipsOf = list => { const t2 = { kcal: 0, p: 0, c: 0, f: 0 }; for (const [e] of list) for (const x in t2) t2[x] += +e[x] || 0; return t2; };
   const head = (title, list, menu, hour) => { const tt = chipsOf(list); return `<div class="meal"><div class="meal-h"><span class="row" style="gap:8px">${title}${hour ? `<button class="mbtn hplus" data-hplus="${hour}" aria-label="Ajouter à ${+hour} h">+</button>` : ''}</span><span class="row" style="gap:10px">${list.length ? `<span class="mh-tot"><b>${r0(tt.kcal)}</b> kcal<span class="chips"><span style="color:var(--p)">${r0(tt.p)}P</span><span style="color:var(--f)">${r0(tt.f)}L</span><span style="color:var(--c)">${r0(tt.c)}G</span></span></span>` : ''}${menu && list.length ? `<button class="mbtn" data-mm="${esc(menu)}" aria-label="Options du repas">⋯</button>` : ''}</span></div><div class="card list">`; };
   const row = (e, i, sub) => `<div class="entry${selMode && sel.has(e.id) ? ' on' : ''}" data-i="${i}" data-id="${esc(e.id)}"><div class="irow"><button class="pick" data-pick="${esc(e.id)}" aria-label="Sélectionner">${selMode ? '<span class="ck">✓</span>' : fi(e.name, !!e.recipeId)}</button><div><div class="e-name">${esc(e.name)}</div> <div class="mute xs">${sub}${qBadge(e)}${fibUnknown(e) ? '<span style="color:var(--fib);font-weight:600">fibres ? · </span>' : ''}${e.grams ? r0(e.grams) + ' g' : 'portion'}${e.src === 'photo' ? ' · photo IA' : e.src === 'describe' ? ' · décrit (IA)' : ''}</div></div></div>
@@ -834,6 +882,7 @@ function renderJournal() {
   $('#bfIn').onchange = e => { const v = num(e.target.value); day(cur).bf = v; save(); toast(v == null ? 'Masse grasse effacée' : 'Masse grasse enregistrée'); render(); };
   if ($('#doUpd')) $('#doUpd').onclick = doUpdate;
   if ($('#doCk')) $('#doCk').onclick = () => { doCheckin(); toast('Check-in validé : objectifs mis à jour pour la semaine'); render(); };
+  if ($('#alGo')) $('#alGo').onclick = () => { tab = 'nutri'; render(); window.scrollTo(0, 0); };
   if ($('#goMeas')) $('#goMeas').onclick = () => { tab = 'poids'; cur = today(); render(); setTimeout(() => { const el = document.getElementById('measCard'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }, 50); };
   const toggle = id => { if (!selMode) { selMode = true; sel = new Set(); } sel.has(id) ? sel.delete(id) : sel.add(id); if (!sel.size) return exitSel(); render(); };
   document.querySelectorAll('#main .entry').forEach(el => {
