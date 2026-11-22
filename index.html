@@ -589,10 +589,10 @@ function renderJournal() {
   const nUnk = d ? d.entries.filter(fibUnknown).length : 0;
   const mac = (lbl, v, max, col) => `<div class="mac"><div class="ring-s">${ring(v, max, col, 60, 6)}<div class="ring-in"><b>${r0(v)}${lbl === 'Fibres' && nUnk ? '<span style="color:var(--fib)">?</span>' : ''}</b></div></div><div class="mac-l">${lbl}</div><div class="mute xs">/ ${r0(max)} g</div></div>`;
   // Même jauge, mais le chiffre au centre indique ce qu'il reste (en rouge avec un + si l'objectif est dépassé)
-  const macR = (lbl, v, max, col) => { const left = max - v; return `<div class="mac"><div class="ring-s">${ringDots(v, max, col, 60)}<div class="ring-in"><b style="${left < 0 ? 'color:var(--danger)' : ''}">${left < 0 ? '+' + r0(-left) : r0(left)}</b></div></div><div class="mac-l">${lbl}</div><div class="mute xs">${left < 0 ? 'en trop' : 'restants'}</div></div>`; };
+  const macR = (lbl, v, max, col) => { const left = max - v; return `<div class="mac"><div class="ring-s">${ringDots(v, max, col, 60)}<div class="ring-in"><b style="${left < 0 ? 'color:var(--danger)' : ''}">${left < 0 ? '−' + r0(-left) : r0(left)}</b></div></div><div class="mac-l">${lbl}</div><div class="mute xs">restants</div></div>`; };
   let h = weekStrip() + `<div class="card">
     <div class="hero-top">
-      <div class="ring-b">${ring(t.kcal, T.kcal, 'var(--kcal)', 136, 12)}<div class="ring-in"><span class="big">${r0(Math.abs(left))}</span><span class="mute xs">${left < 0 ? 'kcal en trop' : 'restantes'}</span></div></div>
+      <div class="ring-b">${ring(t.kcal, T.kcal, 'var(--kcal)', 136, 12)}<div class="ring-in"><span class="big" style="${left < 0 ? 'color:var(--danger)' : ''}">${left < 0 ? '−' + r0(-left) : r0(left)}</span><span class="mute xs">restantes</span></div></div>
       <div class="hero-side">
         <div><span class="mute">Consommé</span><b>${r0(t.kcal)}</b></div>
         <div><span class="mute">Objectif</span><b>${r0(T.kcal)}</b></div>
