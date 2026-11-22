@@ -85,6 +85,10 @@ button{font:inherit;cursor:pointer}
 .wrap{flex-wrap:wrap}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.segm{display:flex;background:var(--card2);border-radius:12px;padding:3px;margin-bottom:12px}.segm button{flex:1;border:0;background:none;padding:8px 0;border-radius:10px;font-weight:600;color:var(--mute);font-size:14px}.segm button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
+.npick{margin-top:12px;padding-top:6px;border-top:1px solid var(--line)}.ng{margin-top:8px}.ng b{font-size:12.5px;color:var(--mute);font-weight:600}.nch{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:6px 10px;font-size:13px;margin:5px 5px 0 0}.nch.on{background:color-mix(in srgb,var(--acc) 14%,transparent);border-color:var(--acc);color:var(--acc);font-weight:600}
+.ngh{font-size:12px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.04em;margin:16px 0 2px}.nrow{padding:8px 0;border-bottom:1px solid var(--line)}.nrow:last-child{border-bottom:0}.nl{display:flex;justify-content:space-between;gap:8px;font-size:14.5px;align-items:baseline}.nv{text-align:right;white-space:nowrap}.np{font-size:12.5px;margin-left:4px}
 .grid5{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
 .grid5 input{padding:10px 4px;text-align:center}
 input,select,textarea{font:inherit;padding:11px 12px;border:1px solid transparent;border-radius:12px;background:var(--card2);color:var(--ink);width:100%;outline:none}
@@ -204,6 +208,7 @@ tr:last-child td{border-bottom:0}
   <button data-tab="journal" class="on"></button>
   <button data-tab="poids"></button>
   <button data-tab="depense"></button>
+  <button data-tab="nutri"></button>
   <button data-tab="bilan"></button>
   <button data-tab="reglages"></button>
 </nav>
@@ -290,7 +295,7 @@ function defaults() {
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY));
-    if (s) { const d = defaults(); s.settings = { ...d.settings, ...s.settings }; s.days = s.days || {}; s.foods = s.foods || []; s.mf = s.mf || {}; s.recipes = s.recipes || []; s.meals = s.meals || []; s.aiUsage = s.aiUsage || {}; s.checkins = s.checkins || []; return s; }
+    if (s) { const d = defaults(); s.settings = { ...d.settings, ...s.settings }; s.days = s.days || {}; s.foods = s.foods || []; s.mf = s.mf || {}; s.recipes = s.recipes || []; s.meals = s.meals || []; s.aiUsage = s.aiUsage || {}; s.checkins = s.checkins || []; s.microCache = s.microCache || {}; return s; }
   } catch (e) {}
   return defaults();
 }
@@ -330,7 +335,7 @@ async function ghPut(path, obj, sha, message) {
 }
 const dayUsed = d => d && (d.entries.length || d.weight != null || d.bf != null || d.steps != null || (d.meas && Object.keys(d.meas).length));
 function localMonth(m) { const o = {}; for (const [k, d] of Object.entries(S.days)) if (k.startsWith(m) && dayUsed(d)) o[k] = d; return o; }
-function profil() { const { apiKey, ...settings } = S.settings; return { version: 1, settings, foods: S.foods, recipes: S.recipes, meals: S.meals, mf: S.mf, aiUsage: S.aiUsage || {}, checkins: S.checkins || [] }; }
+function profil() { const { apiKey, ...settings } = S.settings; return { version: 1, settings, foods: S.foods, recipes: S.recipes, meals: S.meals, mf: S.mf, aiUsage: S.aiUsage || {}, checkins: S.checkins || [], microCache: S.microCache || {} }; }
 let syncTimer = null, syncing = false, syncAgain = false;
 function scheduleSync(ms = 2000) { if (!CFG.token) return; clearTimeout(syncTimer); syncTimer = setTimeout(sync, ms); }
 function setSync(state, text) {
@@ -382,7 +387,7 @@ async function syncProfil(remoteSha) {
   const g = await ghGet(path); if (!g) return;
   const p = g.json || {};
   S.settings = { ...S.settings, ...(p.settings || {}), apiKey: S.settings.apiKey };
-  S.foods = p.foods || S.foods; S.mf = p.mf || S.mf; S.recipes = p.recipes || S.recipes; S.meals = p.meals || S.meals; S.aiUsage = p.aiUsage || S.aiUsage || {}; S.checkins = p.checkins || S.checkins || [];
+  S.foods = p.foods || S.foods; S.mf = p.mf || S.mf; S.recipes = p.recipes || S.recipes; S.meals = p.meals || S.meals; S.aiUsage = p.aiUsage || S.aiUsage || {}; S.checkins = p.checkins || S.checkins || []; S.microCache = p.microCache || S.microCache || {};
   META.sha[path] = g.sha; META.base[path] = JSON.stringify(profil());
 }
 async function sync() {
@@ -416,7 +421,7 @@ async function sync() {
 const iso = d => { const z = new Date(d.getTime() - d.getTimezoneOffset() * 60000); return z.toISOString().slice(0, 10); };
 const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return iso(d); };
 const today = () => iso(new Date());
-const r0 = x => Math.round(+x || 0), r1 = x => Math.round((+x || 0) * 10) / 10;
+const r0 = x => Math.round(+x || 0), r1 = x => Math.round((+x || 0) * 10) / 10, r2 = x => Math.round((+x || 0) * 100) / 100;
 const num = v => { if (v == null || v === '') return null; const n = typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.').replace(/[^\d.\-]/g, '')); return isFinite(n) ? n : null; };
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -448,7 +453,67 @@ const hourOptions = (v, empty) => (empty ? `<option value="">${esc(empty)}</opti
 const timeInput = v => `<div><label>Heure</label><select id="tm">${hourOptions(v)}</select></div>`;
 const pickTime = meal => { const el = document.getElementById('tm'); return el && el.value ? el.value : defaultTime(meal); };
 function toast(m, ms = 2500) { const t = $('#toast'); if (!t) return; t.textContent = m; t.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => t.style.display = 'none', ms); }
-function scale(per, g) { const o = {}; for (const x of ['kcal', 'p', 'c', 'f', 'fib']) o[x] = per[x] == null ? 0 : per[x] * g / 100; return o; }
+/* ---------- Micronutriments ---------- */
+// k : clé stockée dans e.m (valeurs absolues) et per.m (pour 100 g). ref : repère indicatif homme adulte (ANSES / EFSA),
+// nombre ou fonction des objectifs ; t : 'min' à atteindre, 'max' à ne pas dépasser. mf : colonne MacroFactor. off : champ Open Food Facts (_100g, en g) × x.
+const NUT = [
+  { k: 'sug', l: 'Sucres', u: 'g', g: 'Glucides', ref: 100, t: 'max', mf: 'Sugars (g)', off: 'sugars' },
+  { k: 'sugA', l: 'Sucres ajoutés', u: 'g', g: 'Glucides', ref: T => T.kcal * 0.1 / 4, t: 'max', mf: 'Sugars Added (g)', off: 'added-sugars' },
+  { k: 'starch', l: 'Amidon', u: 'g', g: 'Glucides', mf: 'Starch (g)', off: 'starch' },
+  { k: 'sat', l: 'AG saturés', u: 'g', g: 'Lipides', ref: T => T.kcal * 0.12 / 9, t: 'max', mf: 'Saturated Fat (g)', off: 'saturated-fat' },
+  { k: 'mono', l: 'AG mono-insaturés', u: 'g', g: 'Lipides', mf: 'Monounsaturated Fat (g)', off: 'monounsaturated-fat' },
+  { k: 'poly', l: 'AG poly-insaturés', u: 'g', g: 'Lipides', mf: 'Polyunsaturated Fat (g)', off: 'polyunsaturated-fat' },
+  { k: 'trans', l: 'AG trans', u: 'g', g: 'Lipides', mf: 'Trans Fat (g)', off: 'trans-fat' },
+  { k: 'o3', l: 'Oméga-3 (total)', u: 'g', g: 'Lipides', mf: 'Omega-3 (g)', off: 'omega-3-fat' },
+  { k: 'ala', l: 'Oméga-3 ALA', u: 'g', g: 'Lipides', ref: T => T.kcal * 0.01 / 9, t: 'min', mf: 'Omega-3 ALA (g)', off: 'alpha-linolenic-acid' },
+  { k: 'epa', l: 'Oméga-3 EPA', u: 'g', g: 'Lipides', mf: 'Omega-3 EPA (g)', off: 'eicosapentaenoic-acid' },
+  { k: 'dha', l: 'Oméga-3 DHA', u: 'g', g: 'Lipides', ref: 0.25, t: 'min', mf: 'Omega-3 DHA (g)', off: 'docosahexaenoic-acid' },
+  { k: 'o6', l: 'Oméga-6', u: 'g', g: 'Lipides', ref: T => T.kcal * 0.04 / 9, t: 'min', mf: 'Omega-6 (g)', off: 'omega-6-fat' },
+  { k: 'chol', l: 'Cholestérol', u: 'mg', g: 'Lipides', mf: 'Cholesterol (mg)', off: 'cholesterol', x: 1e3 },
+  { k: 'sel', l: 'Sel', u: 'g', g: 'Minéraux', ref: 5, t: 'max', from: 'na', fx: 2.5 / 1000 },
+  { k: 'na', l: 'Sodium', u: 'mg', g: 'Minéraux', ref: 2000, t: 'max', mf: 'Sodium (mg)', off: 'sodium', x: 1e3 },
+  { k: 'kal', l: 'Potassium', u: 'mg', g: 'Minéraux', ref: 3500, t: 'min', mf: 'Potassium (mg)', off: 'potassium', x: 1e3 },
+  { k: 'ca', l: 'Calcium', u: 'mg', g: 'Minéraux', ref: 950, t: 'min', mf: 'Calcium (mg)', off: 'calcium', x: 1e3 },
+  { k: 'mgn', l: 'Magnésium', u: 'mg', g: 'Minéraux', ref: 420, t: 'min', mf: 'Magnesium (mg)', off: 'magnesium', x: 1e3 },
+  { k: 'fe', l: 'Fer', u: 'mg', g: 'Minéraux', ref: 11, t: 'min', mf: 'Iron (mg)', off: 'iron', x: 1e3 },
+  { k: 'zn', l: 'Zinc', u: 'mg', g: 'Minéraux', ref: 11, t: 'min', mf: 'Zinc (mg)', off: 'zinc', x: 1e3 },
+  { k: 'ph', l: 'Phosphore', u: 'mg', g: 'Minéraux', ref: 700, t: 'min', mf: 'Phosphorus (mg)', off: 'phosphorus', x: 1e3 },
+  { k: 'cu', l: 'Cuivre', u: 'mg', g: 'Minéraux', ref: 1.6, t: 'min', mf: 'Copper (mg)', off: 'copper', x: 1e3 },
+  { k: 'mn', l: 'Manganèse', u: 'mg', g: 'Minéraux', ref: 3, t: 'min', mf: 'Manganese (mg)', off: 'manganese', x: 1e3 },
+  { k: 'se', l: 'Sélénium', u: 'µg', g: 'Minéraux', ref: 70, t: 'min', mf: 'Selenium (mcg)', off: 'selenium', x: 1e6 },
+  { k: 'vA', l: 'Vitamine A', u: 'µg', g: 'Vitamines', ref: 750, t: 'min', mf: 'Vitamin A (mcg)', off: 'vitamin-a', x: 1e6 },
+  { k: 'b1', l: 'B1 (thiamine)', u: 'mg', g: 'Vitamines', ref: 1.2, t: 'min', mf: 'B1, Thiamine (mg)', off: 'vitamin-b1', x: 1e3 },
+  { k: 'b2', l: 'B2 (riboflavine)', u: 'mg', g: 'Vitamines', ref: 1.6, t: 'min', mf: 'B2, Riboflavin (mg)', off: 'vitamin-b2', x: 1e3 },
+  { k: 'b3', l: 'B3 (niacine)', u: 'mg', g: 'Vitamines', ref: 16, t: 'min', mf: 'B3, Niacin (mg)', off: 'vitamin-pp', x: 1e3 },
+  { k: 'b5', l: 'B5 (ac. pantothénique)', u: 'mg', g: 'Vitamines', ref: 5, t: 'min', mf: 'B5, Pantothenic Acid (mg)', off: 'pantothenic-acid', x: 1e3 },
+  { k: 'b6', l: 'B6', u: 'mg', g: 'Vitamines', ref: 1.7, t: 'min', mf: 'B6, Pyridoxine (mg)', off: 'vitamin-b6', x: 1e3 },
+  { k: 'b9', l: 'B9 (folates)', u: 'µg', g: 'Vitamines', ref: 330, t: 'min', mf: 'Folate (mcg)', off: 'vitamin-b9', x: 1e6 },
+  { k: 'b12', l: 'B12', u: 'µg', g: 'Vitamines', ref: 4, t: 'min', mf: 'B12, Cobalamin (mcg)', off: 'vitamin-b12', x: 1e6 },
+  { k: 'vC', l: 'Vitamine C', u: 'mg', g: 'Vitamines', ref: 110, t: 'min', mf: 'Vitamin C (mg)', off: 'vitamin-c', x: 1e3 },
+  { k: 'vD', l: 'Vitamine D', u: 'µg', g: 'Vitamines', ref: 15, t: 'min', mf: 'Vitamin D (mcg)', off: 'vitamin-d', x: 1e6 },
+  { k: 'vE', l: 'Vitamine E', u: 'mg', g: 'Vitamines', ref: 11, t: 'min', mf: 'Vitamin E (mg)', off: 'vitamin-e', x: 1e3 },
+  { k: 'vK', l: 'Vitamine K', u: 'µg', g: 'Vitamines', ref: 70, t: 'min', mf: 'Vitamin K (mcg)', off: 'vitamin-k', x: 1e6 },
+  { k: 'chl', l: 'Choline', u: 'mg', g: 'Vitamines', ref: 400, t: 'min', mf: 'Choline (mg)', off: 'choline', x: 1e3 },
+  { k: 'caf', l: 'Caféine', u: 'mg', g: 'Autres', ref: 400, t: 'max', mf: 'Caffeine (mg)', off: 'caffeine', x: 1e3 },
+  { k: 'alc', l: 'Alcool', u: 'g', g: 'Autres', mf: 'Alcohol (g)' },
+  { k: 'water', l: 'Eau des aliments', u: 'g', g: 'Autres', mf: 'Water (g)' },
+  { k: 'leu', l: 'Leucine', u: 'g', g: 'Autres', mf: 'Leucine (g)' }
+];
+const MACRO_ROWS = [
+  { k: 'kcal', l: 'Calories', u: 'kcal', g: 'Macros', t: 'cible' }, { k: 'p', l: 'Protéines', u: 'g', g: 'Macros', t: 'min' },
+  { k: 'c', l: 'Glucides', u: 'g', g: 'Macros', t: 'cible' }, { k: 'f', l: 'Lipides', u: 'g', g: 'Macros', t: 'cible' }, { k: 'fib', l: 'Fibres', u: 'g', g: 'Macros', t: 'min' }
+];
+const NUT_ALL = [...MACRO_ROWS, ...NUT], NUT_BY = Object.fromEntries(NUT_ALL.map(n => [n.k, n]));
+const NUT_DEFAULT = ['kcal', 'p', 'c', 'f', 'fib', 'sug', 'sat', 'sel', 'kal', 'ca', 'mgn', 'fe', 'vC', 'vD', 'b12'];
+// MacroFactor : ligne (objet colonne -> valeur) -> m ; valeurs vides = inconnues
+function mfMicros(get) { const m = {}; for (const n of NUT) if (n.mf) { const v = num(get(n.mf)); if (v != null) m[n.k] = v; } return Object.keys(m).length ? m : undefined; }
+function offMicros(nu) { const m = {}; for (const n of NUT) if (n.off) { const v = num(nu[n.off + '_100g']); if (v != null) m[n.k] = v * (n.x || 1); } return Object.keys(m).length ? m : undefined; }
+const mulM = (m, f) => { if (!m) return undefined; const o = {}; for (const k in m) if (m[k] != null) o[k] = m[k] * f; return o; };
+const addM = (a, b) => { if (!b) return a; const o = { ...(a || {}) }; for (const k in b) if (b[k] != null) o[k] = (o[k] || 0) + b[k]; return o; };
+// Cache des micronutriments estimés pour un nom d'aliment (pour 100 g), partagé entre appareils
+const microFor = name => (S.microCache || {})[norm(name || '')];
+function withMicros(per, name) { if (!per || per.m) return per; const c = microFor(name); return c ? { ...per, m: c } : per; }
+function scale(per, g) { const o = {}; for (const x of ['kcal', 'p', 'c', 'f', 'fib']) o[x] = per[x] == null ? 0 : per[x] * g / 100; if (per.m) o.m = mulM(per.m, g / 100); return o; }
 
 /* ===================== Algorithme adaptatif ===================== */
 // Série journalière : poids (null si pas de pesée) et apport (null si journée non saisie).
@@ -556,6 +621,7 @@ const IC = {
   journal: ic('<path d="M4 5h16M4 12h16M4 19h10"/>'),
   poids: ic('<rect x="3" y="3" width="18" height="18" rx="5"/><path d="M8.5 9.5a5 5 0 0 1 7 0L12 13"/>'),
   depense: ic('<path d="M12 3c1 3.5 5 5.5 5 10a5 5 0 0 1-10 0c0-2.2 1-3.6 2.2-4.8.2 1.6.9 2.6 1.8 3.1C11 9 11 6 12 3z"/>'),
+  nutri: ic('<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.5"/><circle cx="4.5" cy="12" r="1.5"/><circle cx="4.5" cy="18" r="1.5"/>'),
   bilan: ic('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'),
   reglages: ic('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'),
   plus: ic('<path d="M12 5v14M5 12h14"/>'),
@@ -567,16 +633,109 @@ const IC = {
   describe: ic('<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>'),
   recipe: ic('<path d="M4 11h16a8 8 0 0 1-16 0z"/><path d="M8 7c0-1.5 1-2 1-3M12 7c0-1.5 1-2 1-3M16 7c0-1.5 1-2 1-3"/>')
 };
-const TABS = { journal: 'Journal', poids: 'Poids', depense: 'Dépense', bilan: 'Bilan', reglages: 'Réglages' };
+/* ---------- Onglet Nutriments ---------- */
+let nutriPer = '7', nutriPick = false;
+const fmtN = v => v == null ? '–' : Math.abs(v) >= 100 ? r0(v).toLocaleString('fr-FR') : Math.abs(v) >= 10 ? String(r1(v)).replace('.', ',') : String(r2(v)).replace('.', ',');
+const nutV = (e, n) => n.g === 'Macros' ? +e[n.k] || 0 : n.from ? (e.m && e.m[n.from] != null ? e.m[n.from] * n.fx : null) : (e.m && e.m[n.k] != null ? +e.m[n.k] : null);
+const nutShown = () => (S.settings.nutriShown || NUT_DEFAULT).filter(k => NUT_BY[k]);
+function nutRef(n, T) { if (n.g === 'Macros') return T[n.k]; return typeof n.ref === 'function' ? n.ref(T) : n.ref; }
+function nutriDays() {
+  if (nutriPer === 'jour') return hasIntake(cur) ? [cur] : [];
+  const t = today(); return [...Array(+nutriPer)].map((_, i) => addDays(t, -1 - i)).filter(hasIntake); // jours complets (aujourd'hui exclu)
+}
+function nutStats(days) {
+  const ents = days.flatMap(k => S.days[k].entries), kcal = ents.reduce((s, e) => s + (+e.kcal || 0), 0), out = {};
+  for (const n of NUT_ALL) {
+    let sum = 0, kk = 0, cnt = 0;
+    for (const e of ents) { const v = nutV(e, n); if (v != null) { sum += v; kk += +e.kcal || 0; cnt++; } }
+    out[n.k] = { avg: days.length ? sum / days.length : 0, cov: kcal > 0 ? kk / kcal : ents.length ? cnt / ents.length : 0 };
+  }
+  return { out, ents };
+}
+function renderNutri() {
+  const days = nutriDays(), T = targets(), { out, ents } = nutStats(days), shown = nutShown();
+  const per = nutriPer === 'jour' ? fmtDate(cur) : `moyenne des ${days.length} derniers jours saisis`;
+  let h = `<div class="segm">${[['jour', 'Jour'], ['7', '7 jours'], ['30', '30 jours']].map(([v, l]) => `<button data-per="${v}" class="${nutriPer === v ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+  if (nutriPer === 'jour') h += weekStrip();
+  h += `<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><div><h2 style="margin:0">Nutriments</h2><div class="mute xs">${esc(per)}</div></div>
+    <button class="btn sm" id="pickN">${nutriPick ? 'Fermer ▴' : `Choisir (${shown.length}) ▾`}</button></div>`;
+  if (nutriPick) {
+    const groups = [...new Set(NUT_ALL.map(n => n.g))];
+    h += `<div class="npick">${groups.map(g => `<div class="ng"><b>${g}</b><div>${NUT_ALL.filter(n => n.g === g).map(n => `<button class="nch ${shown.includes(n.k) ? 'on' : ''}" data-nk="${n.k}">${esc(n.l)}</button>`).join('')}</div></div>`).join('')}
+      <div class="row" style="margin-top:8px"><button class="btn sm" id="nDef">Par défaut</button><button class="btn sm" id="nAll">Tout</button><button class="btn sm" id="nNone">Macros seules</button></div></div>`;
+  }
+  if (!days.length) h += `<p class="mute" style="margin-top:12px">Aucun aliment saisi sur cette période.</p>`;
+  else {
+    let lastG = null;
+    for (const k of shown) {
+      const n = NUT_BY[k], o = out[k], ref = nutRef(n, T), pct = ref > 0 ? o.avg / ref * 100 : null;
+      if (n.g !== lastG) { h += `<div class="ngh">${n.g}</div>`; lastG = n.g; }
+      const none = o.cov === 0 && n.g !== 'Macros', part = !none && n.g !== 'Macros' && o.cov < 0.95;
+      const over = n.t === 'max' && pct > 100, col = n.g === 'Macros' ? `var(--${k})` : over ? 'var(--danger)' : n.t === 'max' ? 'var(--acc2)' : pct >= 100 ? 'var(--c)' : 'var(--acc)';
+      const refTxt = ref > 0 ? `${n.t === 'max' ? '≤ ' : n.t === 'min' ? '≥ ' : '/ '}${fmtN(ref)}` : '';
+      h += `<div class="nrow" data-nrow="${k}"><div class="nl"><span>${esc(n.l)}</span><span class="nv">${none ? '<span class="mute">pas de données</span>' : `${part ? '≈ ' : ''}<b>${fmtN(o.avg)}</b> ${n.u}${refTxt ? ` <span class="mute">${refTxt}</span>` : ''}${pct != null ? ` <span class="np" style="color:${over ? 'var(--danger)' : 'var(--mute)'}">${r0(pct)} %</span>` : ''}`}</span></div>
+        ${ref > 0 && !none ? `<div class="bar" style="margin:4px 0 2px"><i style="width:${Math.min(100, pct)}%;background:${col}"></i></div>` : ''}
+        ${part ? `<div class="mute xs">connu pour ${r0(o.cov * 100)} % des calories : valeur sous-estimée</div>` : ''}</div>`;
+    }
+  }
+  h += `</div>`;
+  // Aliments sans micronutriments sur la période
+  const miss = ents.filter(e => !e.m && (+e.kcal || 0) > 0 && e.meal !== 'Import');
+  if (days.length && miss.length) {
+    const nm = new Set(miss.map(e => norm(e.name))).size;
+    h += `<div class="card"><h2>Données manquantes</h2><p class="mute" style="margin:4px 0 10px">${miss.length} aliment${miss.length > 1 ? 's' : ''} de la période n’${miss.length > 1 ? 'ont' : 'a'} aucun micronutriment (aliments de base, produits Open Food Facts incomplets, saisies manuelles). L’IA peut les estimer d’après la table Ciqual : ${nm} nom${nm > 1 ? 's' : ''} différent${nm > 1 ? 's' : ''}, quelques centimes au plus.</p>
+      <button class="btn pri" id="estM">Estimer avec l’IA</button></div>`;
+  }
+  h += `<p class="mute xs" style="margin:0 4px 20px">Touchez une ligne pour voir les aliments qui y contribuent le plus. Repères indicatifs pour un homme adulte (ANSES / EFSA) ; les macros suivent tes objectifs. Les valeurs viennent de MacroFactor, d’Open Food Facts, des étiquettes et des estimations IA.</p>`;
+  $('#main').innerHTML = h;
+  if (nutriPer === 'jour') bindWeek();
+  document.querySelectorAll('[data-per]').forEach(b => b.onclick = () => { nutriPer = b.dataset.per; render(); });
+  $('#pickN').onclick = () => { nutriPick = !nutriPick; render(); };
+  const setShown = a => { S.settings.nutriShown = a; save(); render(); };
+  document.querySelectorAll('[data-nk]').forEach(b => b.onclick = () => { const k = b.dataset.nk, cur0 = nutShown(); setShown(cur0.includes(k) ? cur0.filter(x => x !== k) : NUT_ALL.map(n => n.k).filter(x => x === k || cur0.includes(x))); });
+  if ($('#nDef')) { $('#nDef').onclick = () => setShown(null); $('#nAll').onclick = () => setShown(NUT_ALL.map(n => n.k)); $('#nNone').onclick = () => setShown(MACRO_ROWS.map(n => n.k)); }
+  document.querySelectorAll('[data-nrow]').forEach(el => el.onclick = () => openNutTop(NUT_BY[el.dataset.nrow], ents, days.length));
+  if ($('#estM')) $('#estM').onclick = () => estimateMicrosAI(miss);
+}
+function openNutTop(n, ents, nd) {
+  const agg = {};
+  for (const e of ents) { const v = nutV(e, n); if (v == null || v <= 0) continue; const k = norm(e.name); const a = agg[k] || (agg[k] = { name: e.name, v: 0, x: 0 }); a.v += v; a.x++; }
+  const list = Object.values(agg).sort((a, b) => b.v - a.v), tot = list.reduce((s, a) => s + a.v, 0);
+  openSheet(`<h3>${esc(n.l)}</h3><div class="mute" style="margin-bottom:8px">Principales sources ${nd > 1 ? `sur ${nd} jours` : 'du jour'}</div>
+    ${list.length ? `<table><tr><th>Aliment</th><th>${n.u}</th><th>Part</th></tr>${list.slice(0, 12).map(a => `<tr><td>${esc(a.name)}${a.x > 1 ? ` <span class="mute">×${a.x}</span>` : ''}</td><td>${fmtN(a.v)}</td><td>${r0(a.v / tot * 100)} %</td></tr>`).join('')}</table>` : '<p class="mute">Aucune donnée.</p>'}
+    <button class="btn" id="close" style="margin-top:12px">Fermer</button>`);
+  $('#close').onclick = closeSheet;
+}
+async function estimateMicrosAI(miss) {
+  if (!S.settings.apiKey) return toast('Ajoute ta clé API dans Réglages → Photo IA');
+  const names = [...new Map(miss.map(e => [norm(e.name), e.name])).values()].slice(0, 40);
+  const btn = $('#estM'); if (btn) { btn.disabled = true; btn.textContent = 'Estimation en cours…'; }
+  try {
+    const txt = await askAI([{ type: 'text', text: `Tu es nutritionniste. Pour chacun de ces aliments, donne les valeurs POUR 100 g (table Ciqual si possible) : kcal et micronutriments (sucres et AG saturés en g, sodium en mg, etc.).
+Aliments :
+${names.map(n => '- ' + n).join('\n')}
+Réponds UNIQUEMENT avec un objet JSON associant chaque nom exact à ses valeurs : {"nom": {"kcal":0,"micro":${AI_MICRO}}}` }], 4000);
+    const o = cutJSON(txt, '{', '}'), by = {}; for (const [k, v] of Object.entries(o)) by[norm(k)] = v;
+    S.microCache = S.microCache || {}; let n = 0;
+    for (const e of miss) {
+      const v = by[norm(e.name)]; if (!v) continue; const m100 = aiMicros(v.micro); if (!m100) continue;
+      S.microCache[norm(e.name)] = m100;
+      const g = e.grams > 0 ? e.grams : num(v.kcal) > 0 ? e.kcal / num(v.kcal) * 100 : null; if (!g) continue;
+      e.m = mulM(m100, g / 100); e.mEst = true; if (e.per && !e.per.m) e.per = { ...e.per, m: m100 }; n++;
+    }
+    save(); render(); toast(`${n} aliment${n > 1 ? 's' : ''} complété${n > 1 ? 's' : ''} (estimation IA)`);
+  } catch (err) { toast('Estimation impossible : ' + err.message, 4000); if (btn) { btn.disabled = false; btn.textContent = 'Estimer avec l’IA'; } }
+}
+const TABS = { journal: 'Journal', poids: 'Poids', depense: 'Dépense', nutri: 'Nutriments', bilan: 'Bilan', reglages: 'Réglages' };
 
 function render() {
   document.querySelectorAll('nav button').forEach(b => { b.classList.toggle('on', b.dataset.tab === tab); b.innerHTML = IC[b.dataset.tab] + TABS[b.dataset.tab]; });
-  const dated = tab === 'journal' || tab === 'poids';
+  const dated = tab === 'journal' || tab === 'poids' || (tab === 'nutri' && nutriPer === 'jour');
   $('#todayBtn').style.display = dated && cur !== today() ? 'block' : 'none';
   if (tab !== 'journal' && selMode) exitSel(false);
   $('#qbar').style.display = tab === 'journal' ? 'flex' : 'none'; document.body.classList.toggle('tabj', tab === 'journal');
   $('#title').textContent = tab === 'journal' ? fmtDate(cur) : TABS[tab];
-  ({ journal: renderJournal, poids: renderPoids, depense: renderDepense, bilan: renderBilan, reglages: renderReglages })[tab]();
+  ({ journal: renderJournal, poids: renderPoids, depense: renderDepense, nutri: renderNutri, bilan: renderBilan, reglages: renderReglages })[tab]();
 }
 
 function bar(v, max, color) { const p = max > 0 ? Math.min(100, v / max * 100) : 0; return `<div class="bar"><i style="width:${p}%;background:${v > max * 1.05 ? 'var(--danger)' : color}"></i></div>`; }
@@ -859,7 +1018,7 @@ function openSearch(initialQ = '') {
     document.querySelectorAll('#res .it').forEach(el => el.onclick = () => el.dataset.src === 'rcp' ? openRecipeLog(shown.rcp[+el.dataset.i]) : openQty(shown[el.dataset.src][+el.dataset.i], null, { fromSearch: true }));
     document.querySelectorAll('[data-plate]').forEach(b => b.onclick = ev => {
       ev.stopPropagation(); const [src, i] = b.dataset.plate.split(':'), f = shown[src][+i], g = f.piece || f.serving || 100;
-      PLATE.push({ id: uid(), name: f.name, code: f.code, grams: g, per: f.per, ...(f.piece ? { piece: f.piece, unit: f.unit } : {}), ...qMeta(f), ...scale(f.per, g) });
+      PLATE.push({ id: uid(), name: f.name, code: f.code, grams: g, per: withMicros(f.per, f.name), ...(f.piece ? { piece: f.piece, unit: f.unit } : {}), ...qMeta(f), ...scale(withMicros(f.per, f.name), g) });
       updChip(true);
     });
   };
@@ -887,7 +1046,7 @@ function offToFood(p) {
   let kcal = num(n['energy-kcal_100g']); if (kcal == null && num(n.energy_100g) != null) kcal = num(n.energy_100g) / 4.184;
   const brand = p.brands ? ' – ' + String(p.brands).split(',')[0].trim() : '';
   return { name: (p.product_name_fr || p.product_name || 'Produit sans nom') + brand, code: p.code,
-    per: { kcal, p: num(n.proteins_100g), c: num(n.carbohydrates_100g), f: num(n.fat_100g), fib: num(n.fiber_100g) },
+    per: { kcal, p: num(n.proteins_100g), c: num(n.carbohydrates_100g), f: num(n.fat_100g), fib: num(n.fiber_100g), m: offMicros(n) },
     serving: num(p.serving_quantity), ns: /^[a-e]$/.test(p.nutriscore_grade || '') ? p.nutriscore_grade : undefined, nova: num(p.nova_group) || undefined };
 }
 
@@ -909,7 +1068,7 @@ function openQty(food, editIndex, opts = {}) {
     <div id="calc" class="card"></div>
     ${isMine ? '' : `<label class="row" style="color:var(--ink);font-size:14px"><input type="checkbox" id="keep"> Ajouter à mes aliments</label>`}
     <div class="row wrap" style="margin-top:10px"><button class="btn pri" id="ok">${e ? 'Enregistrer' : 'Ajouter'}</button>${canPlate ? '<button class="btn" id="toPlate">+ Assiette</button>' : ''}${e ? '<button class="btn danger" id="del">Supprimer</button>' : ''}<button class="btn" id="cancel">Annuler</button></div>`);
-  const perNow = () => { const fv = $('#fibIn') ? num($('#fibIn').value) : null; return fv != null ? { ...food.per, fib: fv } : food.per; };
+  const perNow = () => { const fv = $('#fibIn') ? num($('#fibIn').value) : null; const P0 = withMicros(food.per, food.name); return fv != null ? { ...P0, fib: fv } : P0; };
   if ($('#fibIn')) $('#fibIn').oninput = () => upd();
   const upd = () => { const v = scale(perNow(), num($('#g').value) || 0); $('#calc').innerHTML = `<b>${r0(v.kcal)} kcal</b> · P ${r1(v.p)} g · G ${r1(v.c)} g · L ${r1(v.f)} g · Fibres ${r1(v.fib)} g`; };
   const syncCnt = () => { if ($('#cnt')) $('#cnt').value = r1((num($('#g').value) || 0) / food.piece); };
@@ -942,7 +1101,7 @@ function openEdit(i) {
 }
 
 function openManual(e0, editIndex, code) {
-  const v = e0 || {}, e = editIndex != null ? e0 : null;  // e0 peut juste pré-remplir le nom (produit scanné sans valeurs)
+  const v = e0 || {}, e = editIndex != null ? e0 : null, mv = v.m || {};  // e0 peut juste pré-remplir le nom (produit scanné sans valeurs)
   openSheet(`<h3>${e ? 'Modifier' : 'Saisie manuelle'}</h3>
     ${e ? '' : `<button class="btn" id="mLabel" style="width:100%;margin-bottom:12px;display:flex;align-items:center;justify-content:center;gap:8px">${IC.photo.replace('<svg', '<svg width="20" height="20"')} Lire l’étiquette nutritionnelle (IA)</button><div id="mLabelMsg" class="mute xs" style="margin:-6px 0 10px"></div>`}
     <label>Nom</label><input id="mName" value="${esc(v.name || '')}" placeholder="ex. Lasagnes maison">
@@ -950,6 +1109,8 @@ function openManual(e0, editIndex, code) {
     <div class="grid2" style="margin-top:8px">${timeInput(e ? entryTime(e) : defaultTime(pendingMeal || MEALS[defaultMeal()]))}<div></div></div>
     <label class="row" style="color:var(--ink);font-size:14px;margin:10px 0"><input type="checkbox" id="mPer"> Valeurs ci-dessous pour 100 g</label>
     <div class="grid5"><div><label>kcal</label><input id="mK" type="number" inputmode="decimal" value="${v.kcal != null ? r0(v.kcal) : ''}"></div><div><label>Prot.</label><input id="mP" type="number" inputmode="decimal" value="${v.p != null ? r1(v.p) : ''}"></div><div><label>Gluc.</label><input id="mC" type="number" inputmode="decimal" value="${v.c != null ? r1(v.c) : ''}"></div><div><label>Lip.</label><input id="mF" type="number" inputmode="decimal" value="${v.f != null ? r1(v.f) : ''}"></div><div><label>Fibres</label><input id="mFib" type="number" inputmode="decimal" value="${v.fib != null ? r1(v.fib) : ''}"></div></div>
+    <details id="mMore" ${mv.sug != null || mv.sat != null || mv.na != null ? 'open' : ''} style="margin-top:8px"><summary class="mute" style="font-size:13.5px">Détails : sucres, AG saturés, sel (facultatif)</summary>
+      <div class="grid3" style="margin-top:6px"><div><label>Sucres (g)</label><input id="mSug" type="number" inputmode="decimal" value="${mv.sug != null ? r1(mv.sug) : ''}"></div><div><label>AG sat. (g)</label><input id="mSat" type="number" inputmode="decimal" value="${mv.sat != null ? r1(mv.sat) : ''}"></div><div><label>Sel (g)</label><input id="mSel" type="number" inputmode="decimal" value="${mv.na != null ? r2(mv.na * 2.5 / 1000) : ''}"></div></div></details>
     <label class="row" style="color:var(--ink);font-size:14px;margin-top:10px"><input type="checkbox" id="mKeep"> Ajouter à mes aliments (nécessite « pour 100 g »)</label>
     <div class="row" style="margin-top:12px"><button class="btn pri" id="ok">${e ? 'Enregistrer' : 'Ajouter'}</button>${e ? '<button class="btn danger" id="del">Supprimer</button>' : ''}<button class="btn" id="cancel">Annuler</button></div>`);
   $('#cancel').onclick = closeSheet;
@@ -961,6 +1122,9 @@ function openManual(e0, editIndex, code) {
   $('#ok').onclick = () => {
     const name = $('#mName').value.trim() || 'Aliment'; const g = num($('#mG').value);
     const vals = { kcal: num($('#mK').value) || 0, p: num($('#mP').value) || 0, c: num($('#mC').value) || 0, f: num($('#mF').value) || 0, fib: num($('#mFib').value) || 0 };
+    const m = { ...(e && e.m ? ($('#mPer').checked && e.grams ? mulM(e.m, 100 / e.grams) : e.m) : {}) }, sv = (k, x) => { if (x == null) delete m[k]; else m[k] = x; };
+    sv('sug', num($('#mSug').value)); sv('sat', num($('#mSat').value)); sv('na', num($('#mSel').value) == null ? null : num($('#mSel').value) * 400);
+    if (Object.keys(m).length) vals.m = m;
     let entry;
     if ($('#mPer').checked) {
       if (!g) return toast('Indique la quantité en grammes');
@@ -977,10 +1141,11 @@ function openManual(e0, editIndex, code) {
 
 
 /* ---------- Recettes ---------- */
-const itemVals = it => it.per && it.grams ? scale(it.per, it.grams) : { kcal: +it.kcal || 0, p: +it.p || 0, c: +it.c || 0, f: +it.f || 0, fib: +it.fib || 0 };
-function recipeTotals(r) { const t = { kcal: 0, p: 0, c: 0, f: 0, fib: 0 }; for (const it of r.items) { const v = itemVals(it); for (const x in t) t[x] += v[x]; } return t; }
+const itemVals = it => it.per && it.grams ? scale(it.per, it.grams) : { kcal: +it.kcal || 0, p: +it.p || 0, c: +it.c || 0, f: +it.f || 0, fib: +it.fib || 0, ...(it.m ? { m: it.m } : {}) };
+// Les micronutriments d'une recette ne sont comptés que si tous les ingrédients en ont (sinon total trompeur)
+function recipeTotals(r) { const t = { kcal: 0, p: 0, c: 0, f: 0, fib: 0 }; let m = {}, all = r.items.length > 0; for (const it of r.items) { const v = itemVals(it); for (const x in t) t[x] += v[x]; if (v.m) m = addM(m, v.m); else if (v.kcal > 0) all = false; } if (all && Object.keys(m).length) t.m = m; return t; }
 function recipeWeight(r) { if (r.cooked > 0) return +r.cooked; if (r.items.length && r.items.every(it => it.grams > 0)) return r.items.reduce((s, it) => s + +it.grams, 0); return null; }
-function recipePortion(r) { const t = recipeTotals(r), n = Math.max(1, +r.portions || 1), o = {}; for (const x in t) o[x] = t[x] / n; return o; }
+function recipePortion(r) { const t = recipeTotals(r), n = Math.max(1, +r.portions || 1), o = {}; for (const x in t) o[x] = x === 'm' ? mulM(t.m, 1 / n) : t[x] / n; return o; }
 function recipeItem(r, i) { const v = recipePortion(r); return `<div class="it irow" data-src="rcp" data-i="${i}">${fi(r.name, true)}<div><div style="font-weight:600;font-size:14.5px">${esc(r.name)}</div><div class="mute">${r0(v.kcal)} kcal / portion · P ${r0(v.p)} · L ${r0(v.f)} · G ${r0(v.c)}${r.portions > 1 ? ' · ' + r.portions + ' portions' : ''}</div></div></div>`; }
 function openRecipes() {
   ingDraft = null;
@@ -999,8 +1164,8 @@ function openRecipeLog(r) {
     <div class="row wrap" style="margin-bottom:8px">${[0.5, 1, 1.5, 2].map(x => `<button class="btn sm" data-np="${x}">${String(x).replace('.', ',')}</button>`).join('')}</div>
     <div id="calc" class="card"></div>
     <div class="row wrap" style="margin-top:10px"><button class="btn pri" id="ok">Ajouter</button><button class="btn" id="edit">Modifier la recette</button><button class="btn" id="cancel">Annuler</button></div>`);
-  const per = W ? (() => { const t = recipeTotals(r), o = {}; for (const x in t) o[x] = t[x] * 100 / W; return o; })() : null;
-  const vals = () => { const n = num($('#np').value) || 0, v = recipePortion(r), o = {}; for (const x in v) o[x] = v[x] * n; return o; };
+  const per = W ? (() => { const t = recipeTotals(r), o = {}; for (const x in t) o[x] = x === 'm' ? mulM(t.m, 100 / W) : t[x] * 100 / W; return o; })() : null;
+  const vals = () => { const n = num($('#np').value) || 0, v = recipePortion(r), o = {}; for (const x in v) o[x] = x === 'm' ? mulM(v.m, n) : v[x] * n; return o; };
   const upd = () => { const v = vals(), n = num($('#np').value) || 0; $('#calc').innerHTML = `<b>${r0(v.kcal)} kcal</b> · P ${r1(v.p)} g · G ${r1(v.c)} g · L ${r1(v.f)} g · Fibres ${r1(v.fib)} g${W ? ` <span class="mute">(${r0(n * W / (r.portions || 1))} g)</span>` : ''}`; };
   $('#np').oninput = upd; upd();
   document.querySelectorAll('[data-np]').forEach(b => b.onclick = () => { $('#np').value = b.dataset.np; upd(); });
@@ -1142,7 +1307,10 @@ async function askAI(content, maxTokens = 2000) {
   return (j.content || []).map(c => c.text || '').join('');
 }
 const cutJSON = (txt, a, b) => JSON.parse(txt.slice(txt.indexOf(a), txt.lastIndexOf(b) + 1));
-const AI_ITEM = '{"nom":"…","grammes":0,"kcal":0,"proteines":0,"glucides":0,"lipides":0,"fibres":0,"nova":1}';
+const AI_MK = { sucres: 'sug', ags: 'sat', sodium_mg: 'na', potassium_mg: 'kal', calcium_mg: 'ca', magnesium_mg: 'mgn', fer_mg: 'fe', zinc_mg: 'zn', vitA_ug: 'vA', vitC_mg: 'vC', vitD_ug: 'vD', vitE_mg: 'vE', b9_ug: 'b9', b12_ug: 'b12', omega3_g: 'o3' };
+const AI_MICRO = '{' + Object.keys(AI_MK).map(k => `"${k}":0`).join(',') + '}';
+const AI_ITEM = '{"nom":"…","grammes":0,"kcal":0,"proteines":0,"glucides":0,"lipides":0,"fibres":0,"nova":1,"micro":' + AI_MICRO + '}';
+function aiMicros(o) { if (!o || typeof o !== 'object') return undefined; const m = {}; for (const [a, k] of Object.entries(AI_MK)) { const v = num(o[a]); if (v != null) m[k] = v; } return Object.keys(m).length ? m : undefined; }
 const AI_NOVA = '« nova » = groupe NOVA estimé : 1 brut ou peu transformé, 2 ingrédient culinaire (huile, beurre, sucre), 3 transformé (pain, fromage, conserve), 4 ultra-transformé (biscuits, sodas, plats industriels, sauces toutes prêtes).';
 function needKey(title) {
   if (S.settings.apiKey) return false;
@@ -1159,13 +1327,15 @@ Lis les valeurs POUR 100 g (ou 100 ml). Si le tableau ne donne que des valeurs p
 - Énergie en kcal (si seuls les kJ sont lisibles, divise par 4,184).
 - « glucides » = la ligne Glucides (pas « dont sucres »), « lipides » = Matières grasses (pas « dont saturés »), « fibres » = Fibres alimentaires.
 - « nom » : nom du produit et marque s’ils sont visibles, sinon null.
+- « sucres » = dont sucres, « ags » = dont acides gras saturés, « sel » = Sel en g (si seul le sodium est donné, sel = sodium × 2,5).
 - « portion_g » : poids d’une portion indiqué sur l’emballage, sinon null.
-Mets null pour toute valeur illisible. Réponds UNIQUEMENT avec un objet JSON : {"nom":null,"kcal":0,"proteines":0,"glucides":0,"lipides":0,"fibres":0,"portion_g":null}`;
+Mets null pour toute valeur illisible. Réponds UNIQUEMENT avec un objet JSON : {"nom":null,"kcal":0,"proteines":0,"glucides":0,"lipides":0,"fibres":0,"sucres":0,"ags":0,"sel":0,"portion_g":null}`;
     const o = cutJSON(await askAI([{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } }, { type: 'text', text: prompt }], 600), '{', '}');
     if (!$('#mK')) return;
     if (o.nom && !$('#mName').value.trim()) $('#mName').value = o.nom;
     const set = (id, v) => { if (num(v) != null) $(id).value = r1(num(v)); };
     set('#mK', o.kcal); set('#mP', o.proteines); set('#mC', o.glucides); set('#mF', o.lipides); set('#mFib', o.fibres);
+    set('#mSug', o.sucres); set('#mSat', o.ags); if (num(o.sel) != null) $('#mSel').value = r2(num(o.sel)); if ([o.sucres, o.ags, o.sel].some(v => num(v) != null)) $('#mMore').open = true;
     $('#mPer').checked = true; $('#mKeep').checked = true;
     if (!num($('#mG').value)) $('#mG').value = num(o.portion_g) || 100;
     const miss = ['kcal', 'proteines', 'glucides', 'lipides', 'fibres'].filter(k => num(o[k]) == null);
@@ -1188,6 +1358,7 @@ function openDescribe() {
       const prompt = `Tu es nutritionniste. Voici ce que l’utilisateur a mangé : « ${txt} ».
 Liste chaque aliment séparément. Utilise les quantités indiquées ; sinon estime une portion française standard. Précise si la quantité est crue ou cuite dans le nom quand c’est utile. Donne les valeurs nutritionnelles pour la quantité (table Ciqual si possible).
 ${AI_NOVA}
+« micro » : micronutriments pour la quantité (sucres et AG saturés en g, sodium en mg, etc.).
 Réponds UNIQUEMENT avec un tableau JSON, sans texte autour : [${AI_ITEM}]`;
       showAiItems(cutJSON(await askAI([{ type: 'text', text: prompt }]), '[', ']'), 'describe');
     } catch (e) { out.innerHTML = `<p style="color:var(--danger)">Échec : ${esc(e.message)}</p>`; }
@@ -1217,6 +1388,7 @@ Réponds UNIQUEMENT avec un objet JSON, sans texte autour : {"nom":"…","portio
       if (o.portions > 0 && (!ingDraft.items.length || ingDraft.portions <= 1)) ingDraft.portions = Math.round(o.portions);
       for (const it of o.ingredients || []) {
         const g = num(it.grammes) || 0, vals = { kcal: num(it.kcal) || 0, p: num(it.proteines) || 0, c: num(it.glucides) || 0, f: num(it.lipides) || 0, fib: num(it.fibres) || 0 };
+        const mm = aiMicros(it.micro); if (mm) vals.m = mm;
         ingDraft.items.push({ name: it.nom || 'Ingrédient', grams: g || null, per: g ? scale(vals, 10000 / g) : null, ...vals, src: 'ia' });
       }
       openRecipeEditor(); toast((o.ingredients || []).length + ' ingrédients importés : vérifie les quantités');
@@ -1372,6 +1544,7 @@ async function analysePhoto(file) {
 3. Compte les matières grasses de cuisson et les sauces comme des éléments à part, même si elles se voient peu.
 4. Donne les valeurs nutritionnelles pour ces quantités (table Ciqual si possible ; glucides hors fibres).${hint ? ' Précisions de l’utilisateur : ' + hint : ''}
 5. ${AI_NOVA}
+« micro » : micronutriments pour la quantité (sucres et AG saturés en g, sodium en mg, etc.).
 Réponds UNIQUEMENT avec un tableau JSON, sans texte autour : [${AI_ITEM}]`;
     const txt = await askAI([{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } }, { type: 'text', text: prompt }]);
     showAiItems(cutJSON(txt, '[', ']'), 'photo');
@@ -1382,7 +1555,7 @@ function showAiItems(items, src = 'photo') {
   out.innerHTML = `<label>Résultat — modifie si besoin (g · kcal · P · G · L)</label>` + items.map((it, i) => `
     <div class="ai-row" data-i="${i}"><input type="checkbox" checked class="ck"><input class="nm" value="${esc(it.nom)}"><input class="gr" type="number" value="${r0(it.grammes)}">
     <div class="n"><input class="k" type="number" value="${r0(it.kcal)}"><input class="p" type="number" value="${r1(it.proteines)}"><input class="c" type="number" value="${r1(it.glucides)}"><input class="f" type="number" value="${r1(it.lipides)}"></div>
-    <input type="hidden" class="fb" value="${r1(it.fibres)}"><input type="hidden" class="nv" value="${[1, 2, 3, 4].includes(+it.nova) ? +it.nova : ''}"></div>`).join('') +
+    <input type="hidden" class="fb" value="${r1(it.fibres)}"><input type="hidden" class="mi" value="${esc(JSON.stringify(aiMicros(it.micro) || null))}" data-g0="${num(it.grammes) || 0}" data-k0="${num(it.kcal) || 0}"><input type="hidden" class="nv" value="${[1, 2, 3, 4].includes(+it.nova) ? +it.nova : ''}"></div>`).join('') +
     `<div class="card" id="aiTot" style="margin:10px 0 6px"></div>
      <label>Portion globale (si l’estimation te paraît trop petite ou trop grande)</label>
      <div class="row wrap" id="aiScale">${[0.75, 1, 1.25, 1.5].map(x => `<button class="btn sm ${x === 1 ? 'pri' : ''}" data-x="${x}">×${String(x).replace('.', ',')}</button>`).join('')}</div>
@@ -1409,6 +1582,8 @@ function showAiItems(items, src = 'photo') {
       if (!row.querySelector('.ck').checked) return;
       const q = c => num(row.querySelector(c).value) || 0;
       const g = q('.gr'), vals = { kcal: q('.k'), p: q('.p'), c: q('.c'), f: q('.f'), fib: q('.fb') };
+      const mi = row.querySelector('.mi'); let m0 = null; try { m0 = JSON.parse(mi.value); } catch (e) {}
+      if (m0) { const g0 = +mi.dataset.g0, k0 = +mi.dataset.k0, f = g0 > 0 && g > 0 ? g / g0 : k0 > 0 ? vals.kcal / k0 : 1; vals.m = mulM(m0, f); }
       day(cur).entries.push({ id: uid(), name: row.querySelector('.nm').value || 'Aliment', meal, time: defaultTime(meal), grams: g, per: g ? scale(vals, 10000 / g) : null, ...vals, src, ...(+row.querySelector('.nv').value ? { nova: +row.querySelector('.nv').value, novaEst: true } : {}) }); n++;
     });
     save(); closeSheet(); toast(n + ' aliment(s) ajouté(s)');
@@ -1831,7 +2006,7 @@ function mfFoodLog(wb) {
     for (const r of rows.slice(1)) {
       const k = toDateKey(r[iD]); if (!k || !r[iN]) continue;
       const g = (num(r[iG]) || 0) * (num(r[iQ]) || 1);
-      const vals = { kcal: num(r[iK]) || 0, p: num(r[iP]) || 0, c: num(r[iC]) || 0, f: num(r[iF]) || 0, fib: num(r[iFb]) || 0 };
+      const vals = { kcal: num(r[iK]) || 0, p: num(r[iP]) || 0, c: num(r[iC]) || 0, f: num(r[iF]) || 0, fib: num(r[iFb]) || 0, m: mfMicros(c => I(c) >= 0 ? r[I(c)] : null) };
       (byDay[k] = byDay[k] || []).push({ id: uid(), name: decodeEnt(String(r[iN])), meal: mealFromTime(r[iT]), time: r[iT] || null, grams: g || null, per: g ? scale(vals, 10000 / g) : null, ...vals, src: 'macrofactor' });
     }
     return byDay;
@@ -1880,7 +2055,7 @@ async function importMF(file) {
     for (const r of XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: null })) {
       const nm = r['Recipe Name'], k = num(r['Calories (kcal)']); if (!nm || k == null || S.recipes.some(x => x.name === nm)) continue;
       const tw = num(r['Total Weight (g)']);
-      const vals = { kcal: k, p: num(r['Protein (g)']) || 0, c: num(r['Carbs (g)']) || 0, f: num(r['Fat (g)']) || 0, fib: num(r['Fiber (g)']) || 0 };
+      const vals = { kcal: k, p: num(r['Protein (g)']) || 0, c: num(r['Carbs (g)']) || 0, f: num(r['Fat (g)']) || 0, fib: num(r['Fiber (g)']) || 0, m: mfMicros(c => r[c]) };
       const ings = String(r['Ingredients'] || '').split('\n').map(x => x.trim()).filter(Boolean);
       S.recipes.push({ id: uid(), name: nm, portions: Math.max(1, Math.round(num(r['Serving Qty']) || 1)), cooked: null,
         items: [{ name: 'Total MacroFactor', grams: tw || null, per: tw ? scale(vals, 10000 / tw) : null, ...vals }],
@@ -1895,7 +2070,7 @@ async function importMF(file) {
     for (const r of data) {
       const nm = r['Food Name'], g = num(r['Serving Weight (g)']), k = num(r['Calories (kcal)']);
       if (!nm || !g || k == null || S.foods.some(f => f.name === nm) || S.recipes.some(x => x.name === nm)) continue;
-      const per = { kcal: k * 100 / g, p: (num(r['Protein (g)']) || 0) * 100 / g, c: (num(r['Carbs (g)']) || 0) * 100 / g, f: (num(r['Fat (g)']) || 0) * 100 / g, fib: num(r['Fiber (g)']) == null ? null : num(r['Fiber (g)']) * 100 / g };
+      const per = { kcal: k * 100 / g, p: (num(r['Protein (g)']) || 0) * 100 / g, c: (num(r['Carbs (g)']) || 0) * 100 / g, f: (num(r['Fat (g)']) || 0) * 100 / g, fib: num(r['Fiber (g)']) == null ? null : num(r['Fiber (g)']) * 100 / g, m: mulM(mfMicros(c => r[c]), 100 / g) };
       S.foods.push({ id: uid(), name: nm, per, serving: g }); nF++;
     }
   }
