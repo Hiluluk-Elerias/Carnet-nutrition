@@ -379,9 +379,16 @@ async function syncProfil(remoteSha) {
   if (remoteSha && remoteSha === META.sha[path] && loc === base) return;
   // Première synchro d'un appareil : le profil du dépôt l'emporte ; ensuite, une modification locale est envoyée.
   if (!remoteSha || (base !== undefined && loc !== base)) {
-    let sha = remoteSha;
+    let sha = remoteSha, out = JSON.parse(loc);
+    // Fusion champ par champ : on n'envoie que ce qui a changé ici, le reste vient du dépôt (modifié ailleurs)
+    if (remoteSha && remoteSha !== META.sha[path]) {
+      const g = await ghGet(path), r = (g && g.json) || {}, b = JSON.parse(base || '{}'), same = (x, y) => JSON.stringify(x) === JSON.stringify(y);
+      if (g) { sha = g.sha; for (const k of Object.keys(r)) if (k !== 'settings' && same(out[k], b[k]) && !same(r[k], b[k])) out[k] = r[k];
+        const ls = out.settings || {}, bs = b.settings || {}, rs = r.settings || {}; for (const k of Object.keys(rs)) if (same(ls[k], bs[k])) ls[k] = rs[k];
+        S.settings = { ...S.settings, ...ls }; for (const k of ['foods', 'mf', 'recipes', 'meals', 'aiUsage', 'checkins', 'microCache']) if (out[k] !== undefined) S[k] = out[k]; saveLocal(); }
+    }
     for (let attempt = 0; attempt < 3; attempt++) {
-      try { META.sha[path] = await ghPut(path, JSON.parse(loc), sha, 'Réglages et aliments'); META.base[path] = loc; return; }
+      try { META.sha[path] = await ghPut(path, out, sha, 'Réglages et aliments'); META.base[path] = JSON.stringify(profil()); return; }
       catch (e) { if (e.message === 'conflit' && attempt < 2) { sha = (await ghGet(path) || {}).sha; continue; } throw e; }
     }
   }
