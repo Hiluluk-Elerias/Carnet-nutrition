@@ -1304,6 +1304,7 @@ const FIBER_FOODS = [
   { name: 'Graines de chia', serving: 15, per: { kcal: 486, p: 17, c: 7.7, f: 31, fib: 34 } }
 ];
 function fiberCard(t, T) {
+  return '';  // bandeau fibres retiré (conseils jugés peu utiles au quotidien)
   const miss = T.fib - t.fib;
   if (cur !== today() || miss < 3) return '';
   return `<button class="card fibbtn" id="fibIdeas"><span class="fi">🌾</span><span style="flex:1;text-align:left"><b>Il te manque ${r0(miss)} g de fibres</b></span><span style="color:var(--acc);font-weight:600">Idées ›</span></button>`;
@@ -1436,17 +1437,7 @@ function renderPoids() {
   h += `<div class="card" id="measCard"><h2>Mensurations · ${fmtDate(cur)}</h2><p class="mute xs" style="margin-top:-4px">En cm, le matin, côté droit pour bras et jambes. Laisse vide ce que tu ne mesures pas.</p>
     ${MEAS.map(m => { const lm = lastMeas(m.k, addDays(cur, -1)); return `<div class="meas"><div><div style="font-weight:600;font-size:14px">${m.l}</div><div class="mute xs">${lm ? 'Dernière : ' + r1(lm.v) + ' cm (' + fmtDate(lm.date).toLowerCase() + ')' : '—'}</div></div><input type="number" step="0.1" inputmode="decimal" data-meas="${m.k}" value="${dm[m.k] != null ? dm[m.k] : ''}" placeholder="${lm ? r1(lm.v) : 'cm'}"></div>`; }).join('')}
     <button class="btn pri" id="measSave" style="margin-top:10px">Enregistrer les mensurations</button></div>`;
-  const used = MEAS.filter(m => lastMeas(m.k));
-  if (used.length) {
-    h += `<div class="card"><h2>Évolution des mensurations</h2><table><tr><th>Mesure</th><th>Actuelle</th><th>Depuis le début</th></tr>${used.map(m => { const lm = lastMeas(m.k), dlt = lm.v - lm.first; return `<tr><td>${m.l.replace(' (nombril)', '')}</td><td>${r1(lm.v)}</td><td style="color:${dlt < 0 ? 'var(--c)' : dlt > 0 ? 'var(--p)' : 'inherit'}">${dlt > 0 ? '+' : ''}${r1(dlt)} cm</td></tr>`; }).join('')}</table>`;
-    if (!used.some(m => m.k === measSel)) measSel = used[0].k;
-    const pts = Object.keys(S.days).filter(k => S.days[k].meas && S.days[k].meas[measSel] != null).sort();
-    if (pts.length >= 2) {
-      const v = pts.map(k => +S.days[k].meas[measSel]);
-      h += `<div style="margin-top:12px"><select id="measSel">${used.map(m => `<option value="${m.k}" ${m.k === measSel ? 'selected' : ''}>${m.l}</option>`).join('')}</select></div>${chart(pts, [{ name: MEAS.find(m => m.k === measSel).l + ' (une mesure par point)', v, color: 'var(--acc)' }], ' cm')}`;
-    }
-    h += `</div>`;
-  }
+  h += bodyAnalysisCard();
   $('#main').innerHTML = h;
   $('#wSave').onclick = () => { const dd = day(cur); dd.weight = num($('#wIn2').value); dd.bf = num($('#bfIn2').value); dd.steps = num($('#stIn2').value); save(); toast('Enregistré'); render(); };
   $('#measSave').onclick = () => {
@@ -1454,8 +1445,71 @@ function renderPoids() {
     const dd = day(cur); if (Object.keys(o).length) dd.meas = o; else delete dd.meas;
     save(); toast(Object.keys(o).length ? 'Mensurations enregistrées' : 'Mensurations effacées'); render();
   };
-  if ($('#measSel')) $('#measSel').onchange = e => { measSel = e.target.value; render(); };
   bindRange(); bindWeek();
+}
+
+
+/* ---------- Interprétation des mensurations ----------
+   Compare deux séances de mesure (mesures prises à 3 jours d'écart maximum = une même séance),
+   en croisant tour de taille (graisse abdominale), membres (bras, avant-bras, cuisse, mollet : surtout du muscle),
+   poids tendance et masse grasse de la balance. Seuils au-delà de l'erreur de mesure habituelle (≈ 0,5 cm). */
+function measSessions() {
+  const ks = Object.keys(S.days).filter(k => S.days[k].meas && Object.keys(S.days[k].meas).length).sort(), out = [];
+  for (const k of ks) {
+    const last = out[out.length - 1];
+    if (last && k <= addDays(last.end, 3)) { Object.assign(last.m, S.days[k].meas); last.end = k; }
+    else out.push({ start: k, end: k, m: { ...S.days[k].meas } });
+  }
+  return out;
+}
+function trendsAt() {
+  const ser = series(); if (!ser) return () => ({});
+  const r = run(ser, { ...S.settings, alpha: DISPLAY_ALPHA });
+  const bfT = []; let t = null; ser.dates.forEach(k => { const v = S.days[k] && S.days[k].bf; if (v != null) t = t == null ? +v : t + 0.15 * (+v - t); bfT.push(t); });
+  return k => { let w = null, bf = null; ser.dates.forEach((d, i) => { if (d <= k) { if (r.trend[i] != null) w = r.trend[i]; if (bfT[i] != null) bf = bfT[i]; } }); return { w, bf }; };
+}
+function analyzeBody(a, b, at) {
+  const d = key => a.m[key] != null && b.m[key] != null ? b.m[key] - a.m[key] : null;
+  const limbsK = ['bras', 'avantbras', 'cuisse', 'mollet'].filter(k => d(k) != null);
+  const limb = limbsK.length ? limbsK.reduce((x, k) => x + d(k), 0) / limbsK.length : null;
+  const waist = d('taille'), hips = d('hanches'), chest = d('poitrine');
+  const A = at(a.end), B = at(b.end), dW = A.w != null && B.w != null ? B.w - A.w : null, dBF = A.bf != null && B.bf != null ? B.bf - A.bf : null;
+  const fatKg = A.w != null && B.w != null && A.bf != null && B.bf != null ? B.w * B.bf / 100 - A.w * A.bf / 100 : null, leanKg = fatKg != null ? dW - fatKg : null;
+  // Perte de graisse : taille en baisse, ou masse grasse (balance) en baisse nette sans hausse de la taille
+  const Wd = (waist != null && waist <= -0.75) || (fatKg != null && fatKg <= -0.8 && !(waist != null && waist >= 0.75)), Wu = waist != null && waist >= 0.75 && !(fatKg != null && fatKg <= -0.8), Lu = limb != null && limb >= 0.3, Ld = limb != null && limb <= -0.3;
+  let v;
+  if ((Wd && dBF != null && dBF > 0.5) || (Wu && dBF != null && dBF < -0.5)) v = ['🔀', 'Signal mixte', 'Le tour de taille et la balance ne vont pas dans le même sens. Les deux mesures ont leurs marges d’erreur : attends la prochaine séance pour trancher.'];
+  else if (Wd && Lu) v = ['🎯', 'Recomposition : moins de graisse, plus de muscle', 'La taille baisse pendant que les membres prennent du volume : c’est le signe d’une perte de graisse avec un gain musculaire.'];
+  else if (Wd && Ld) v = ['⚠️', 'Perte de graisse, avec un peu de volume musculaire perdu', 'La taille baisse, mais les membres aussi. Si ça se confirme, augmente un peu les protéines ou ralentis la perte de poids.'];
+  else if (Wd) v = ['🔥', 'Perte de graisse, muscle préservé', 'La taille baisse et les membres restent stables : la perte vient surtout de la graisse.'];
+  else if (Wu && Lu) v = ['📈', 'Prise de masse : muscle et un peu de graisse', 'Les membres et la taille augmentent ensemble : typique d’un surplus calorique.'];
+  else if (Wu) v = ['🍩', 'Prise de graisse', 'La taille augmente sans gain sur les membres : le surplus part surtout en graisse.'];
+  else if (Lu) v = ['💪', 'Gain musculaire', 'Les membres prennent du volume avec une taille stable : gain de muscle sans prise de graisse visible.'];
+  else if (Ld) v = ['📉', 'Perte de volume sur les membres', 'Les membres diminuent sans que la taille bouge : surveille les protéines et la récupération.'];
+  else v = ['➖', 'Stable', 'Pas de changement au-delà de l’erreur de mesure (environ 0,5 cm).'];
+  const facts = [];
+  const cm = x => (x > 0 ? '+' : '') + r1(x).toString().replace('.', ',') + ' cm';
+  if (waist != null) facts.push(`Tour de taille ${cm(waist)}`);
+  if (limb != null) facts.push(`membres ${cm(limb)} en moyenne`);
+  if (hips != null && Math.abs(hips) >= 0.8) facts.push(`hanches ${cm(hips)}`);
+  if (dW != null) facts.push(`poids tendance ${(dW > 0 ? '+' : '') + dW.toFixed(1).replace('.', ',')} kg`);
+  if (dBF != null) facts.push(`masse grasse ${(dBF > 0 ? '+' : '') + dBF.toFixed(1).replace('.', ',')} pt`);
+  const notes = [];
+  if (fatKg != null && Math.abs(dW) >= 0.3) notes.push(`D’après la balance : environ ${(fatKg > 0 ? '+' : '') + fatKg.toFixed(1).replace('.', ',')} kg de graisse et ${(leanKg > 0 ? '+' : '') + leanKg.toFixed(1).replace('.', ',')} kg de masse maigre (eau comprise, donc indicatif).`);
+  if (chest != null && Math.abs(chest) >= 1.5) notes.push(`La poitrine a ${chest < 0 ? 'baissé' : 'augmenté'} (${cm(chest)}) : c’est la mesure la plus sensible à la respiration et à la posture, à prendre avec prudence.`);
+  const days = Math.round((new Date(b.end) - new Date(a.end)) / 864e5);
+  if (days < 7) notes.push(`Seulement ${days} jour${days > 1 ? 's' : ''} d’écart : sur une période aussi courte, l’eau et la digestion peuvent jouer. À confirmer à la prochaine séance.`);
+  return { v, facts, notes, days };
+}
+function bodyAnalysisCard() {
+  const ss = measSessions(); if (ss.length < 2) return ss.length ? `<div class="card"><h2>Analyse des mensurations</h2><p class="mute" style="margin:0">Il faut au moins deux séances de mesures pour interpréter l’évolution.</p></div>` : '';
+  const at = trendsAt(), fmtD = k => new Date(k + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  const block = (title, a, b) => { const r = analyzeBody(a, b, at); return `<div style="margin-top:6px"><div class="mute xs" style="text-transform:uppercase;letter-spacing:.04em;font-weight:600">${title} · ${fmtD(a.end)} → ${fmtD(b.end)}</div>
+    <div style="display:flex;gap:10px;align-items:flex-start;margin:8px 0 6px"><span style="font-size:26px;line-height:1">${r.v[0]}</span><div><div style="font-weight:800;font-size:16.5px">${r.v[1]}</div><div style="font-size:14px;margin-top:2px">${r.v[2]}</div></div></div>
+    <div class="mute" style="font-size:13px">${r.facts.join(' · ')}</div>${r.notes.map(n => `<div class="mute xs" style="margin-top:6px">${n}</div>`).join('')}</div>`; };
+  const last = ss[ss.length - 1], prev = ss[ss.length - 2], first = ss[0];
+  return `<div class="card"><h2>Analyse des mensurations</h2>${block('Depuis la dernière séance', prev, last)}${ss.length > 2 ? '<div style="border-top:1px solid var(--line);margin:14px 0 8px"></div>' + block('Depuis le début', first, last) : ''}
+    <p class="mute xs" style="margin:12px 0 0">Repères : la taille suit surtout la graisse, les bras, cuisses et mollets surtout le muscle. Écarts de moins de 0,5 cm = erreur de mesure.</p></div>`;
 }
 
 /* ---------- Mise à jour de l'appli Android ----------
