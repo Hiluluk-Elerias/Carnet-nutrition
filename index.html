@@ -267,7 +267,7 @@ const FOOD_ICONS = [
 function foodIcon(name, isRecipe) { const n = String(name || ''); for (const [re, ic] of FOOD_ICONS) if (re.test(n)) return ic; return isRecipe ? '🍲' : '🍽️'; }
 const fi = (name, isRecipe) => `<span class="fi">${foodIcon(name, isRecipe)}</span>`;
 const DAYS_FR = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
-const OFF_FIELDS = 'code,product_name,product_name_fr,brands,nutriments,serving_quantity,nutriscore_grade,nova_group';
+const OFF_FIELDS = 'code,product_name,product_name_fr,brands,nutriments,serving_quantity,serving_size,nutriscore_grade,nova_group';
 // Qualité : Nutri-Score (A à E) et groupe NOVA (1 brut … 4 ultra-transformé), fournis par Open Food Facts
 const NS_COL = { a: '#038141', b: '#85bb2f', c: '#e5b400', d: '#ee8100', e: '#e63e11' };
 const qBadge = f => `${f && NS_COL[f.ns] ? `<span class="ns" style="background:${NS_COL[f.ns]}">${f.ns.toUpperCase()}</span>` : ''}${f && +f.nova === 4 ? '<span class="nova4">ultra-transformé</span>' : ''}`;
@@ -299,7 +299,7 @@ function defaults() {
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY));
-    if (s) { const d = defaults(); s.settings = { ...d.settings, ...s.settings }; s.days = s.days || {}; s.foods = s.foods || []; s.mf = s.mf || {}; s.recipes = s.recipes || []; s.meals = s.meals || []; s.aiUsage = s.aiUsage || {}; s.checkins = s.checkins || []; s.microCache = s.microCache || {}; return s; }
+    if (s) { const d = defaults(); s.settings = { ...d.settings, ...s.settings }; s.days = s.days || {}; s.foods = s.foods || []; s.mf = s.mf || {}; s.recipes = s.recipes || []; s.meals = s.meals || []; s.aiUsage = s.aiUsage || {}; s.checkins = s.checkins || []; s.microCache = s.microCache || {}; s.pieces = s.pieces || {}; return s; }
   } catch (e) {}
   return defaults();
 }
@@ -339,7 +339,7 @@ async function ghPut(path, obj, sha, message) {
 }
 const dayUsed = d => d && (d.entries.length || d.weight != null || d.bf != null || d.steps != null || (d.meas && Object.keys(d.meas).length));
 function localMonth(m) { const o = {}; for (const [k, d] of Object.entries(S.days)) if (k.startsWith(m) && dayUsed(d)) o[k] = d; return o; }
-function profil() { const { apiKey, ...settings } = S.settings; return { version: 1, settings, foods: S.foods, recipes: S.recipes, meals: S.meals, mf: S.mf, aiUsage: S.aiUsage || {}, checkins: S.checkins || [], microCache: S.microCache || {} }; }
+function profil() { const { apiKey, ...settings } = S.settings; return { version: 1, settings, foods: S.foods, recipes: S.recipes, meals: S.meals, mf: S.mf, aiUsage: S.aiUsage || {}, checkins: S.checkins || [], microCache: S.microCache || {}, pieces: S.pieces || {} }; }
 let syncTimer = null, syncing = false, syncAgain = false;
 function scheduleSync(ms = 2000) { if (!CFG.token) return; clearTimeout(syncTimer); syncTimer = setTimeout(sync, ms); }
 function setSync(state, text) {
@@ -388,7 +388,7 @@ async function syncProfil(remoteSha) {
       const g = await ghGet(path), r = (g && g.json) || {}, b = JSON.parse(base || '{}'), same = (x, y) => JSON.stringify(x) === JSON.stringify(y);
       if (g) { sha = g.sha; for (const k of Object.keys(r)) if (k !== 'settings' && same(out[k], b[k]) && !same(r[k], b[k])) out[k] = r[k];
         const ls = out.settings || {}, bs = b.settings || {}, rs = r.settings || {}; for (const k of Object.keys(rs)) if (same(ls[k], bs[k])) ls[k] = rs[k];
-        S.settings = { ...S.settings, ...ls }; for (const k of ['foods', 'mf', 'recipes', 'meals', 'aiUsage', 'checkins', 'microCache']) if (out[k] !== undefined) S[k] = out[k]; saveLocal(); }
+        S.settings = { ...S.settings, ...ls }; for (const k of ['foods', 'mf', 'recipes', 'meals', 'aiUsage', 'checkins', 'microCache', 'pieces']) if (out[k] !== undefined) S[k] = out[k]; saveLocal(); }
     }
     for (let attempt = 0; attempt < 3; attempt++) {
       try { META.sha[path] = await ghPut(path, out, sha, 'Réglages et aliments'); META.base[path] = JSON.stringify(profil()); return; }
@@ -398,7 +398,7 @@ async function syncProfil(remoteSha) {
   const g = await ghGet(path); if (!g) return;
   const p = g.json || {};
   S.settings = { ...S.settings, ...(p.settings || {}), apiKey: S.settings.apiKey };
-  S.foods = p.foods || S.foods; S.mf = p.mf || S.mf; S.recipes = p.recipes || S.recipes; S.meals = p.meals || S.meals; S.aiUsage = p.aiUsage || S.aiUsage || {}; S.checkins = p.checkins || S.checkins || []; S.microCache = p.microCache || S.microCache || {};
+  S.foods = p.foods || S.foods; S.mf = p.mf || S.mf; S.recipes = p.recipes || S.recipes; S.meals = p.meals || S.meals; S.aiUsage = p.aiUsage || S.aiUsage || {}; S.checkins = p.checkins || S.checkins || []; S.microCache = p.microCache || S.microCache || {}; S.pieces = p.pieces || S.pieces || {};
   META.sha[path] = g.sha; META.base[path] = JSON.stringify(profil());
 }
 async function sync() {
@@ -1037,7 +1037,17 @@ const PIECES = {
   'cabillaud cuit': [130, 'filet'], 'crevettes cuites': [8, 'crevette'], 'emmental': [30, 'portion'], 'comte': [30, 'portion'], 'camembert': [30, 'portion'],
   'beurre': [10, 'noisette'], 'confiture': [20, 'c. à soupe'], 'pomme de terre cuite a l eau': [100, 'pomme de terre'], 'mandarine': [70, 'mandarine']
 };
-const pieceOf = name => PIECES[norm(name || '')];
+// Poids d'une unité : d'abord ceux que tu as définis (par code-barres ou par nom), puis la liste ci-dessus
+const pieceOf = (name, code) => { const P = (typeof S !== 'undefined' && S.pieces) || {}; return (code && P['c:' + code]) || P[norm(name || '')] || PIECES[norm(name || '')]; };
+// « 1 madeleine (25 g) », « 2 biscuits (20 g) » -> [poids d'une unité, nom de l'unité]
+function servingPiece(size, qty) {
+  qty = num(qty); if (!(qty > 0) || qty > 600) return null;
+  const m = String(size || '').match(/^\s*(\d+(?:[.,]\d+)?)?\s*([^\d(]+?)\s*\(/);
+  let n = m && m[1] ? num(m[1]) : 1, u = m ? m[2].trim().toLowerCase() : '';
+  if (!u || /^(g|gr|grammes?|ml|cl|portions?|serving|part)$/.test(u)) return [qty, 'portion'];
+  if (n > 1) u = u.replace(/(s|x)$/, '');
+  return [qty / (n || 1), u.slice(0, 24)];
+}
 const BASE_FOODS = BASE_RAW.map(([name, kcal, p, c, f, fib, serving, piece, unit]) => { const pc = !piece && pieceOf(name); return { name, per: { kcal, p, c, f, fib }, serving, piece: piece || (pc && pc[0]), unit: unit || (pc && pc[1]), base: true, nova: NOVA_OF(name) }; });
 // Recherche : sans accents, chaque mot doit correspondre ; quelques équivalents anglais pour les aliments importés de MacroFactor
 const SYN = { banane: 'banana', amande: 'almond', pomme: 'apple', oeuf: 'egg', poulet: 'chicken', riz: 'rice', lait: 'milk', fromage: 'cheese', pain: 'bread', avoine: 'oat', noix: 'walnut', pates: 'pasta', saumon: 'salmon', thon: 'tuna', boeuf: 'beef', poire: 'pear', fraise: 'strawberr', framboise: 'raspberr', myrtille: 'blueberr', raisin: 'grape', carotte: 'carrot', tomate: 'tomato', brocoli: 'broccoli', epinard: 'spinach', champignon: 'mushroom', yaourt: 'yogurt', patate: 'potato', dinde: 'turkey', crevette: 'shrimp', chocolat: 'chocolate', miel: 'honey', beurre: 'butter', huile: 'oil', graine: 'seed', noisette: 'hazelnut', cacahuete: 'peanut', haricot: 'bean', lentille: 'lentil', avocat: 'avocado', concombre: 'cucumber', oignon: 'onion', poireau: 'leek', clementine: 'clementine', peche: 'peach', cerise: 'cherr', ananas: 'pineapple', mangue: 'mango', cabillaud: 'cod', jambon: 'ham', sucre: 'sugar', jus: 'juice', biere: 'beer', vin: 'wine' };
@@ -1150,14 +1160,14 @@ function offToFood(p) {
   const brand = p.brands ? ' – ' + String(p.brands).split(',')[0].trim() : '';
   return { name: (p.product_name_fr || p.product_name || 'Produit sans nom') + brand, code: p.code,
     per: { kcal, p: num(n.proteins_100g), c: num(n.carbohydrates_100g), f: num(n.fat_100g), fib: num(n.fiber_100g), m: offMicros(n) },
-    serving: num(p.serving_quantity), ns: /^[a-e]$/.test(p.nutriscore_grade || '') ? p.nutriscore_grade : undefined, nova: num(p.nova_group) || undefined };
+    serving: num(p.serving_quantity), ...(sp => sp ? { piece: sp[0], unit: sp[1] } : {})(servingPiece(p.serving_size, p.serving_quantity)), ns: /^[a-e]$/.test(p.nutriscore_grade || '') ? p.nutriscore_grade : undefined, nova: num(p.nova_group) || undefined };
 }
 
 function openQty(food, editIndex, opts = {}) {
   if (!food.piece) { // fruits et aliments courants : compter à la pièce même pour un aliment déjà saisi en grammes
-    const b = BASE_FOODS.find(x => norm(x.name) === norm(food.name) && x.piece), pc = pieceOf(food.name) || (b && [b.piece, b.unit]);
+    const b = BASE_FOODS.find(x => norm(x.name) === norm(food.name) && x.piece), pc = pieceOf(food.name, food.code) || (b && [b.piece, b.unit]);
     if (pc) food = { ...food, piece: pc[0], unit: pc[1] };
-  }
+  } else { const own = (S.pieces || {})['c:' + food.code] || (S.pieces || {})[norm(food.name)]; if (own) food = { ...food, piece: own[0], unit: own[1] }; }
   const e = editIndex != null ? S.days[cur].entries[editIndex] : null;
   const canPlate = opts.fromSearch && !e && !ingDraft;
   const g0 = e ? e.grams : (food.piece || food.serving || 100);
@@ -1171,6 +1181,7 @@ function openQty(food, editIndex, opts = {}) {
     <div class="grid2" style="margin:10px 0"><div><label>Quantité (g)</label><input id="g" type="number" inputmode="decimal" value="${r1(g0)}"></div><div><label>Repas</label>${mealSelect(e ? e.meal : null)}</div></div>
     <div class="grid2" style="margin:-2px 0 10px">${timeInput(e ? entryTime(e) : defaultTime(pendingMeal || MEALS[defaultMeal()]))}${food.piece ? `<div><label>Nombre (${esc(food.unit || 'pièce')}${/s$/.test(food.unit || '') || /^c\. à/.test(food.unit || '') ? '' : 's'})</label><input id="cnt" type="number" step="1" inputmode="decimal" value="${r1(g0 / food.piece)}"></div>` : '<div></div>'}</div>
     ${food.piece ? `<div class="row wrap" style="margin-bottom:8px">${(food.piece < 15 ? [1, 5, 10, 20] : [1, 2, 3]).map(n => `<button class="btn sm" data-g="${r1(food.piece * n)}">${n} ${esc(food.unit || 'pièce')}${n > 1 && !/s$/.test(food.unit || '') && !/^c\. à/.test(food.unit || '') ? 's' : ''} (${food.piece * n < 10 ? r1(food.piece * n) : r0(food.piece * n)} g)</button>`).join('')}<button class="btn sm" data-g="100">100 g</button></div>` : ''}
+    <div id="unitBox" class="xs" style="margin:-4px 0 8px"><a href="#" id="unitEdit" style="color:var(--acc)">${food.piece ? `1 ${esc(food.unit || 'pièce')} = ${r1(food.piece)} g · modifier` : 'Compter à l’unité (définir le poids d’une pièce)'}</a></div>
     ${food.serving && !food.piece ? `<div class="row wrap" style="margin-bottom:8px"><button class="btn sm" data-g="${food.serving}">1 portion (${r0(food.serving)} g)</button><button class="btn sm" data-g="${food.serving * 2}">2 portions</button><button class="btn sm" data-g="100">100 g</button></div>` : ''}
     <div id="calc" class="card"></div>
     ${isMine ? '' : `<label class="row" style="color:var(--ink);font-size:14px"><input type="checkbox" id="keep"> Ajouter à mes aliments</label>`}
@@ -1183,6 +1194,20 @@ function openQty(food, editIndex, opts = {}) {
   if ($('#cnt')) $('#cnt').oninput = () => { $('#g').value = r1((num($('#cnt').value) || 0) * food.piece); upd(); };
   document.querySelectorAll('[data-g]').forEach(b => b.onclick = () => { $('#g').value = r1(b.dataset.g); syncCnt(); upd(); });
   $('#cancel').onclick = closeSheet;
+  // Poids d'une unité : défini à la main, retenu par code-barres et par nom, synchronisé
+  const savePiece = (g, u) => { S.pieces = S.pieces || {}; const v = [g, u]; if (food.code) S.pieces['c:' + food.code] = v; S.pieces[norm(food.name)] = v; save(); };
+  $('#unitEdit').onclick = ev => { ev.preventDefault();
+    $('#unitBox').innerHTML = `<div class="grid2"><div><label>Poids d’une unité (g)</label><input id="uG" type="number" step="0.1" inputmode="decimal" value="${food.piece ? r1(food.piece) : ''}" placeholder="ex. 25"></div><div><label>Nom de l’unité</label><input id="uN" value="${esc(food.unit || 'pièce')}"></div></div>
+      <div class="mute" style="margin:4px 0 6px">Astuce : poids net du paquet ÷ nombre de pièces (ex. 500 g ÷ 20 madeleines = 25 g).</div><button class="btn sm pri" id="uOk">Enregistrer</button>`;
+    $('#uG').focus();
+    $('#uOk').onclick = () => { const g = num($('#uG').value); if (!(g > 0)) return toast('Indique un poids'); savePiece(g, ($('#uN').value || 'pièce').trim()); openQty({ ...food, piece: g, unit: ($('#uN').value || 'pièce').trim() }, editIndex, opts); };
+  };
+  // Produit scanné sans unité connue : on la cherche sur Open Food Facts (« 1 madeleine (25 g) »)
+  if (!food.piece && food.code && navigator.onLine) fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(food.code)}.json?fields=serving_quantity,serving_size`).then(r => r.json()).then(j => {
+    const sp = j && j.product && servingPiece(j.product.serving_size, j.product.serving_quantity);
+    if (!sp || !$('#unitEdit') || $('#sheet h3').textContent !== food.name || num($('#g').value) !== r1(g0)) return;
+    savePiece(sp[0], sp[1]); openQty({ ...food, piece: sp[0], unit: sp[1] }, editIndex, opts);
+  }).catch(() => {});
   if (e) $('#del').onclick = () => { S.days[cur].entries.splice(editIndex, 1); save(); closeSheet(); };
   if ($('#toPlate')) $('#toPlate').onclick = () => {
     const g = num($('#g').value) || 0; if (!g) return toast('Indique la quantité');
