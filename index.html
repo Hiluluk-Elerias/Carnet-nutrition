@@ -808,7 +808,7 @@ async function estimateMicrosAI(miss) {
       const txt = await askAI([{ type: 'text', text: `Tu es nutritionniste. Pour chacun de ces aliments, donne les valeurs POUR 100 g (table Ciqual si possible) : kcal et micronutriments (sucres et AG saturés en g, sodium en mg, etc.). Nombres uniquement, pas de commentaire.
 Aliments :
 ${part.map(x => '- ' + x).join('\n')}
-Réponds UNIQUEMENT avec un objet JSON compact associant chaque nom exact à ses valeurs : {"nom": {"kcal":0,"micro":${AI_MICRO}}}` }], 4000);
+Réponds UNIQUEMENT avec un objet JSON compact associant chaque nom exact à ses valeurs : {"nom": {"kcal":0,"micro":${AI_MICRO}}}` }]);
       const o = parseAIJSON(txt, '{', '}'), by = {}; for (const [k, v] of Object.entries(o)) by[norm(k)] = v;
       apply(by); save();
     } catch (err) { fails++; console.log('estimation micros', err); }
@@ -1379,7 +1379,8 @@ function resizeImage(file, max = 1024) {
     }; img.onerror = rej; img.src = URL.createObjectURL(file);
   });
 }
-async function askAI(content, maxTokens = 2000) {
+// Plafond large : seuls les jetons réellement produits sont facturés, et une réponse coupée donne un JSON illisible
+async function askAI(content, maxTokens = 8000) {
   if (!S.settings.apiKey) throw new Error('ajoute ta clé API Anthropic dans Réglages');
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -1395,9 +1396,11 @@ async function askAI(content, maxTokens = 2000) {
     const mk = today().slice(0, 7); S.aiUsage = S.aiUsage || {}; const o = S.aiUsage[mk] || (S.aiUsage[mk] = { n: 0, cost: 0 });
     o.n++; o.cost += cost; save();
   } catch (e) {}
-  return (j.content || []).map(c => c.text || '').join('');
+  const txt = (j.content || []).map(c => c.text || '').join('');
+  if (j.stop_reason === 'max_tokens') console.log('réponse IA coupée', txt.length);
+  return txt;
 }
-const cutJSON = (txt, a, b) => JSON.parse(txt.slice(txt.indexOf(a), txt.lastIndexOf(b) + 1));
+const cutJSON = (txt, a, b) => { try { return parseAIJSON(txt, a, b); } catch (e) { throw new Error('réponse de l’IA illisible ou incomplète, réessaie'); } };
 // Version tolérante : retire les blocs ```json, les virgules finales et les nombres écrits « 1,5 »
 function parseAIJSON(txt, a, b) {
   let t = String(txt).replace(/```(json)?/gi, ''); t = t.slice(t.indexOf(a), t.lastIndexOf(b) + 1);
@@ -1428,7 +1431,7 @@ Lis les valeurs POUR 100 g (ou 100 ml). Si le tableau ne donne que des valeurs p
 - « sucres » = dont sucres, « ags » = dont acides gras saturés, « sel » = Sel en g (si seul le sodium est donné, sel = sodium × 2,5).
 - « portion_g » : poids d’une portion indiqué sur l’emballage, sinon null.
 Mets null pour toute valeur illisible. Réponds UNIQUEMENT avec un objet JSON : {"nom":null,"kcal":0,"proteines":0,"glucides":0,"lipides":0,"fibres":0,"sucres":0,"ags":0,"sel":0,"portion_g":null}`;
-    const o = cutJSON(await askAI([{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } }, { type: 'text', text: prompt }], 600), '{', '}');
+    const o = cutJSON(await askAI([{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } }, { type: 'text', text: prompt }], 2000), '{', '}');
     if (!$('#mK')) return;
     if (o.nom && !$('#mName').value.trim()) $('#mName').value = o.nom;
     const set = (id, v) => { if (num(v) != null) $(id).value = r1(num(v)); };
@@ -1481,7 +1484,7 @@ ${txt}
 ---
 Extrais le nom de la recette, le nombre de portions (1 si inconnu) et chaque ingrédient avec sa quantité en grammes (convertis cuillères, pièces, ml en grammes) et ses valeurs nutritionnelles pour cette quantité (table Ciqual si possible).
 Réponds UNIQUEMENT avec un objet JSON, sans texte autour : {"nom":"…","portions":1,"ingredients":[${AI_ITEM}]}`;
-      const o = cutJSON(await askAI([{ type: 'text', text: prompt }], 3000), '{', '}');
+      const o = cutJSON(await askAI([{ type: 'text', text: prompt }]), '{', '}');
       if (!ingDraft.name && o.nom) ingDraft.name = o.nom;
       if (o.portions > 0 && (!ingDraft.items.length || ingDraft.portions <= 1)) ingDraft.portions = Math.round(o.portions);
       for (const it of o.ingredients || []) {
