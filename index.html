@@ -1693,7 +1693,10 @@ Réponds UNIQUEMENT avec un tableau JSON, sans texte autour : [${AI_ITEM}]`;
     showAiItems(cutJSON(txt, '[', ']'), 'photo');
   } catch (e) { out.innerHTML = `<p style="color:var(--danger)">Échec de l’analyse : ${esc(e.message)}</p>`; }
 }
+// Calories cohérentes avec les macros : P×4 + G×4 + L×9 + fibres×2 (l'IA donne parfois des calories et des macros qui ne collent pas)
+const atwater = (p, c, f, fib) => (+p || 0) * 4 + (+c || 0) * 4 + (+f || 0) * 9 + (+fib || 0) * 2;
 function showAiItems(items, src = 'photo') {
+  for (const it of items) { const at = atwater(it.proteines, it.glucides, it.lipides, it.fibres); if (at > 0 && Math.abs(at - (+it.kcal || 0)) > Math.max(10, 0.08 * at)) it.kcal = at; }
   const out = $('#aiRes');
   out.innerHTML = `<label>Résultat — modifie si besoin (g · kcal · P · G · L)</label>` + items.map((it, i) => `
     <div class="ai-row" data-i="${i}"><input type="checkbox" checked class="ck"><input class="nm" value="${esc(it.nom)}"><input class="gr" type="number" value="${r0(it.grammes)}">
@@ -1716,7 +1719,8 @@ function showAiItems(items, src = 'photo') {
   // si on change les grammes, on recalcule proportionnellement
   out.querySelectorAll('.ai-row').forEach(row => {
     const gEl = row.querySelector('.gr'); row._g0 = num(gEl.value) || 0;
-    gEl.onchange = () => { const g = num(gEl.value) || 0, g0 = row._g0; if (g0 > 0) for (const c of ['.k', '.p', '.c', '.f', '.fb']) { const el = row.querySelector(c); el.value = r1((num(el.value) || 0) * g / g0); } row._g0 = g; tot(); };
+    gEl.onchange = () => { const g = num(gEl.value) || 0, g0 = row._g0; if (g0 > 0) for (const c of ['.k', '.p', '.c', '.f', '.fb']) { const el = row.querySelector(c); el.value = r1((num(el.value) || 0) * g / g0); } row._g0 = g; tot(); };    // Une macro corrigée à la main met les calories à jour
+    for (const c of ['.p', '.c', '.f']) row.querySelector(c).oninput = () => { const q = x => num(row.querySelector(x).value) || 0; row.querySelector('.k').value = r0(atwater(q('.p'), q('.c'), q('.f'), q('.fb'))); tot(); };
   });
   tot();
   $('#aiAdd').onclick = () => {
