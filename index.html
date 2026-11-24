@@ -588,7 +588,8 @@ function macroGrams(kcal) {
   return { p, f, fib: s.fiberMode === 'kcal' ? kcal * 14 / 1000 : +s.fiberG, W };
 }
 function targetsFrom(tdee) { const s = S.settings, kcal = s.goalKcal > 0 ? s.goalKcal : tdee + s.rate * s.kcalPerKg / 7, m = macroGrams(kcal);
-  return { kcal, p: m.p, f: m.f, c: Math.max(0, (kcal - m.p * 4 - m.f * 9) / 4), fib: m.fib, tdee }; }
+  // Glucides hors fibres (convention française) : les fibres apportent aussi 2 kcal/g, à retirer du budget
+  return { kcal, p: m.p, f: m.f, c: Math.max(0, (kcal - m.p * 4 - m.f * 9 - m.fib * 2) / 4), fib: m.fib, tdee }; }
 // Zones de rythme en % du poids par semaine (négatif = perte)
 const RATE_MIN = -1.25, RATE_MAX = 0.75;
 function rateZone(pct) {
@@ -2261,7 +2262,7 @@ function renderReglages() {
     ${s.fiberMode === 'kcal' ? `<div><label>Fibres</label><input disabled value="${r0(Tn.fib)} g"></div>` : `<div><label>Fibres (g)</label><input type="number" data-k="fiberG" value="${s.fiberG}"></div>`}
     <div><label>Calories fixes (0 = auto)</label><input type="number" step="10" data-k="goalKcal" value="${s.goalKcal}"></div>
     <div><label>Dépense initiale (kcal)</label><input type="number" step="10" data-k="initialTDEE" value="${s.initialTDEE}"></div>
-    </div><p class="mute xs" style="margin-bottom:0">${kg ? `Calculé sur ton poids tendance (${String(r1(W)).replace('.', ',')} kg) : protéines et lipides suivent ton poids. ` : ''}Les glucides prennent le reste des calories (${r0(Tn.c)} g aujourd’hui).</p></div>
+    </div><p class="mute xs" style="margin-bottom:0">${kg ? `Calculé sur ton poids tendance (${String(r1(W)).replace('.', ',')} kg) : protéines et lipides suivent ton poids. ` : ''}Les glucides prennent le reste des calories, une fois comptées les fibres (2 kcal/g) : ${r0(Tn.c)} g aujourd’hui.</p></div>
   <div class="card"><h2>Synchronisation GitHub</h2>
     <p class="mute">Tes données sont enregistrées dans un dépôt privé et partagées entre le téléphone et l’ordinateur.</p>
     <div class="grid2"><div><label>Compte</label><input data-cfg="owner" value="${esc(CFG.owner)}" autocapitalize="off"></div><div><label>Dépôt</label><input data-cfg="repo" value="${esc(CFG.repo)}" autocapitalize="off"></div></div>
