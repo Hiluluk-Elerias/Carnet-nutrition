@@ -1241,7 +1241,10 @@ function openQty(food, editIndex, opts = {}) {
     <div class="row wrap" style="margin-top:10px"><button class="btn pri" id="ok">${e ? 'Enregistrer' : 'Ajouter'}</button>${canPlate ? '<button class="btn" id="toPlate">+ Assiette</button>' : ''}${e ? '<button class="btn danger" id="del">Supprimer</button>' : ''}<button class="btn" id="cancel">Annuler</button></div>`);
   const perNow = () => { const fv = $('#fibIn') ? num($('#fibIn').value) : null; const P0 = withMicros(food.per, food.name); return fv != null ? { ...P0, fib: fv } : P0; };
   if ($('#fibIn')) $('#fibIn').oninput = () => upd();
-  const upd = () => { const v = scale(perNow(), num($('#g').value) || 0); $('#calc').innerHTML = `<b>${r0(v.kcal)} kcal</b> · P ${r1(v.p)} g · G ${r1(v.c)} g · L ${r1(v.f)} g · Fibres ${r1(v.fib)} g`; };
+  // Plat issu de la photo IA : détail des ingrédients ajusté au poids saisi
+  const ingTxt = g => { if (!e || !e.items || !e.items.length) return ''; const S0 = e.items.reduce((s, x) => s + (+x.grams || 0), 0), k = S0 > 0 ? g / S0 : 1;
+    return `<details style="margin-top:6px"><summary class="mute xs">Détail des ingrédients (${e.items.length})</summary>${e.items.map(x => `<div class="row xs" style="justify-content:space-between"><span>${esc(x.name)}</span><span class="mute">${r0(x.grams * k)} g · ${r0(x.kcal * k)} kcal</span></div>`).join('')}</details>`; };
+  const upd = () => { const g = num($('#g').value) || 0, v = scale(perNow(), g), open = $('#calc details') && $('#calc details').open; $('#calc').innerHTML = `<b>${r0(v.kcal)} kcal</b> · P ${r1(v.p)} g · G ${r1(v.c)} g · L ${r1(v.f)} g · Fibres ${r1(v.fib)} g` + ingTxt(g); if (open) $('#calc details').open = true; };
   const syncCnt = () => { if ($('#cnt')) $('#cnt').value = r1((num($('#g').value) || 0) / food.piece); };
   $('#g').oninput = () => { syncCnt(); upd(); }; upd();
   if ($('#cnt')) $('#cnt').oninput = () => { $('#g').value = r1((num($('#cnt').value) || 0) * food.piece); upd(); };
@@ -1273,7 +1276,7 @@ function openQty(food, editIndex, opts = {}) {
     // Fibres complétées : on les retient aussi dans « Mes aliments » si le produit y est
     if ($('#fibIn') && num($('#fibIn').value) != null) { const mf = S.foods.find(f => f.name === food.name || (food.code && f.code === food.code)); if (mf) mf.per = { ...mf.per, fib: num($('#fibIn').value) }; }
     if (ingDraft && !e) { if ($('#keep') && $('#keep').checked) S.foods.push({ id: uid(), name: food.name, code: food.code, per: food.per, serving: food.serving || g }); return addIngredient(entry); }
-    if (e) { for (const k of ['src', 'aiG', 'nova', 'novaEst', 'mEst']) if (e[k] != null && entry[k] == null) entry[k] = e[k];
+    if (e) { for (const k of ['src', 'aiG', 'nova', 'novaEst', 'mEst', 'items']) if (e[k] != null && entry[k] == null) entry[k] = e[k];
       if (e.src === 'photo' && Math.abs(g - (e.grams || 0)) > 0.5) { const aiG = e.aiG || e.grams; entry.aiG = aiG; S.aiCalib = (S.aiCalib || []).filter(c => !(c.n === String(food.name).slice(0, 60) && c.ai === Math.round(aiG) && c.d === today())); recordCalib(food.name, aiG, g); } }
     if (e) S.days[cur].entries[editIndex] = entry; else day(cur).entries.push(entry);
     if ($('#keep') && $('#keep').checked) S.foods.push({ id: uid(), name: food.name, code: food.code, per: perNow(), serving: food.serving || g });
@@ -1556,8 +1559,9 @@ function openDescribe() {
 Liste chaque aliment séparément. Utilise les quantités indiquées ; sinon estime une portion française standard. Précise si la quantité est crue ou cuite dans le nom quand c’est utile. Donne les valeurs nutritionnelles pour la quantité (table Ciqual si possible).
 ${AI_NOVA}
 « micro » : micronutriments pour la quantité (sucres et AG saturés en g, sodium en mg, etc.).
-Réponds UNIQUEMENT avec un tableau JSON, sans texte autour : [${AI_ITEM}]`;
-      showAiItems(cutJSON(await askAI([{ type: 'text', text: prompt }]), '[', ']'), 'describe');
+Donne aussi un nom court au plat (ex. « Pâtes à la saucisse »).
+Réponds UNIQUEMENT avec un objet JSON, sans texte autour : {"plat":"…","ingredients":[${AI_ITEM}]}`;
+      showAiItems(parseAiDish(await askAI([{ type: 'text', text: prompt }])), 'describe');
     } catch (e) { out.innerHTML = `<p style="color:var(--danger)">Échec : ${esc(e.message)}</p>`; }
   };
   setTimeout(() => $('#desc') && $('#desc').focus(), 50);
@@ -1752,54 +1756,85 @@ async function analysePhoto(file) {
 4. Donne les valeurs nutritionnelles pour ces quantités (table Ciqual si possible ; glucides hors fibres).${hint ? ' Précisions de l’utilisateur : ' + hint : ''}
 5. ${AI_NOVA}
 « micro » : micronutriments pour la quantité (sucres et AG saturés en g, sodium en mg, etc.).
-Réponds UNIQUEMENT avec un tableau JSON, sans texte autour : [${AI_ITEM}]`;
+Donne aussi un nom court au plat (ex. « Pâtes à la saucisse »).
+Réponds UNIQUEMENT avec un objet JSON, sans texte autour : {"plat":"…","ingredients":[${AI_ITEM}]}`;
     const txt = await askAI([{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } }, { type: 'text', text: prompt }]);
-    showAiItems(cutJSON(txt, '[', ']'), 'photo');
+    showAiItems(parseAiDish(txt), 'photo');
   } catch (e) { out.innerHTML = `<p style="color:var(--danger)">Échec de l’analyse : ${esc(e.message)}</p>`; }
 }
 // Calories cohérentes avec les macros : P×4 + G×4 + L×9 + fibres×2 (l'IA donne parfois des calories et des macros qui ne collent pas)
 const atwater = (p, c, f, fib) => (+p || 0) * 4 + (+c || 0) * 4 + (+f || 0) * 9 + (+fib || 0) * 2;
-function showAiItems(items, src = 'photo') {
+// Résultat IA : un plat (nom + poids total) avec le détail des ingrédients dépliable.
+// Changer le poids total ajuste tous les ingrédients en proportion (produit en croix).
+function parseAiDish(txt) {
+  if (/"ingredients"\s*:/.test(txt)) { const o = cutJSON(txt, '{', '}'); return { plat: o.plat || o.nom || '', items: o.ingredients || [] }; }
+  return { plat: '', items: cutJSON(txt, '[', ']') };
+}
+function showAiItems(items, src = 'photo', plat = '') {
+  if (!Array.isArray(items)) ({ plat, items } = items);
   for (const it of items) { const at = atwater(it.proteines, it.glucides, it.lipides, it.fibres); if (at > 0 && Math.abs(at - (+it.kcal || 0)) > Math.max(10, 0.08 * at)) it.kcal = at; }
-  const out = $('#aiRes');
-  out.innerHTML = `<label>Résultat — modifie si besoin (g · kcal · P · G · L)</label>` + items.map((it, i) => `
+  const out = $('#aiRes'), multi = items.length > 1;
+  const aiTotal = items.reduce((s, it) => s + (num(it.grammes) || 0), 0);
+  out.innerHTML = `<div class="card" style="margin:6px 0 8px">
+      <label style="margin-top:0">Plat</label><input id="dName" value="${esc(plat || (items[0] && items[0].nom) || 'Repas')}">
+      <div class="grid2" style="margin-top:8px;align-items:end"><div><label>Poids total (g)</label><input id="dG" type="number" inputmode="decimal" value="${r0(aiTotal)}"></div><div id="aiTot" style="padding-bottom:10px"></div></div>
+      <div class="mute xs" style="margin-top:4px">Pèse ton assiette et corrige le total : tous les ingrédients sont ajustés en proportion.</div>
+      <div class="row wrap" id="aiScale" style="margin-top:8px">${[0.5, 0.75, 1, 1.25, 1.5].map(x => `<button class="btn sm ${x === 1 ? 'pri' : ''}" data-x="${x}">×${String(x).replace('.', ',')}</button>`).join('')}</div></div>
+    <details id="aiDet" ${multi ? '' : 'open'}><summary style="font-weight:600;padding:6px 0">Détail des ingrédients (${items.length})</summary>
+    <label>Modifie si besoin (g · kcal · P · G · L)</label>` + items.map((it, i) => `
     <div class="ai-row" data-i="${i}"><input type="checkbox" checked class="ck"><input class="nm" value="${esc(it.nom)}"><input class="gr" type="number" value="${r0(it.grammes)}">
     <div class="n"><input class="k" type="number" value="${r0(it.kcal)}"><input class="p" type="number" value="${r1(it.proteines)}"><input class="c" type="number" value="${r1(it.glucides)}"><input class="f" type="number" value="${r1(it.lipides)}"></div>
-    <input type="hidden" class="fb" value="${r1(it.fibres)}"><input type="hidden" class="mi" value="${esc(JSON.stringify(aiMicros(it.micro) || null))}" data-g0="${num(it.grammes) || 0}" data-k0="${num(it.kcal) || 0}"><input type="hidden" class="nv" value="${[1, 2, 3, 4].includes(+it.nova) ? +it.nova : ''}"></div>`).join('') +
-    `<div class="card" id="aiTot" style="margin:10px 0 6px"></div>
-     <label>Portion globale (si l’estimation te paraît trop petite ou trop grande)</label>
-     <div class="row wrap" id="aiScale">${[0.5, 0.75, 1, 1.25, 1.5].map(x => `<button class="btn sm ${x === 1 ? 'pri' : ''}" data-x="${x}">×${String(x).replace('.', ',')}</button>`).join('')}</div>
+    <input type="hidden" class="fb" value="${r1(it.fibres)}"><input type="hidden" class="mi" value="${esc(JSON.stringify(aiMicros(it.micro) || null))}" data-g0="${num(it.grammes) || 0}" data-k0="${num(it.kcal) || 0}"><input type="hidden" class="nv" value="${[1, 2, 3, 4].includes(+it.nova) ? +it.nova : ''}"></div>`).join('') + `</details>
+     ${multi ? `<label class="row" style="color:var(--ink);font-size:14px;margin-top:10px"><input type="checkbox" id="asDish" checked> Enregistrer comme un seul plat (sinon un aliment par ingrédient)</label>` : ''}
      <div class="row" style="margin-top:10px"><label style="margin:0">Repas</label>${mealSelect(null)}</div>
-     <button class="btn pri" id="aiAdd" style="margin-top:10px">Ajouter la sélection</button>`;
-  const tot = () => { const t = { kcal: 0, p: 0, c: 0, f: 0 }; out.querySelectorAll('.ai-row').forEach(row => { if (!row.querySelector('.ck').checked) return; t.kcal += num(row.querySelector('.k').value) || 0; t.p += num(row.querySelector('.p').value) || 0; t.c += num(row.querySelector('.c').value) || 0; t.f += num(row.querySelector('.f').value) || 0; });
-    $('#aiTot').innerHTML = `<b>Total : ${r0(t.kcal)} kcal</b> · P ${r0(t.p)} · L ${r0(t.f)} · G ${r0(t.c)}`; };
+     <button class="btn pri" id="aiAdd" style="margin-top:10px">Ajouter</button>`;
+  const rows = () => [...out.querySelectorAll('.ai-row')].filter(r => r.querySelector('.ck').checked);
+  const q = (row, c) => num(row.querySelector(c).value) || 0;
+  const sumG = () => rows().reduce((s, r) => s + q(r, '.gr'), 0);
+  const tot = (keepG) => { const t = { kcal: 0, p: 0, c: 0, f: 0 }; rows().forEach(r => { t.kcal += q(r, '.k'); t.p += q(r, '.p'); t.c += q(r, '.c'); t.f += q(r, '.f'); });
+    $('#aiTot').innerHTML = `<b>${r0(t.kcal)} kcal</b><div class="mute xs">P ${r0(t.p)} · L ${r0(t.f)} · G ${r0(t.c)}</div>`; if (!keepG) $('#dG').value = r0(sumG()); };
+  // met chaque ingrédient à l'échelle k (grammes, calories, macros)
+  const scaleRows = (k, all) => (all ? [...out.querySelectorAll('.ai-row')] : rows()).forEach(row => { for (const c of ['.gr', '.k', '.p', '.c', '.f', '.fb']) { const el = row.querySelector(c); el.value = c === '.k' ? r0((num(el.value) || 0) * k) : r1((num(el.value) || 0) * k); } row._g0 = q(row, '.gr'); });
   let factor = 1;
   out.querySelectorAll('#aiScale [data-x]').forEach(b => b.onclick = () => {
-    const x = +b.dataset.x, k = x / factor; factor = x;
-    out.querySelectorAll('.ai-row').forEach(row => { for (const c of ['.gr', '.k', '.p', '.c', '.f', '.fb']) { const el = row.querySelector(c); el.value = c === '.gr' || c === '.k' ? r0((num(el.value) || 0) * k) : r1((num(el.value) || 0) * k); } row._g0 = num(row.querySelector('.gr').value) || 0; });
+    const x = +b.dataset.x; scaleRows(x / factor, true); factor = x;
     out.querySelectorAll('#aiScale [data-x]').forEach(y => y.classList.toggle('pri', y === b)); tot();
   });
-  out.addEventListener('input', tot); out.addEventListener('change', tot);
-  // si on change les grammes, on recalcule proportionnellement
+  $('#dG').onchange = () => { const g = num($('#dG').value) || 0, s = sumG(); if (g > 0 && s > 0) { scaleRows(g / s); out.querySelectorAll('#aiScale [data-x]').forEach(y => y.classList.remove('pri')); } tot(); };
+  out.querySelector('#aiDet').addEventListener('input', () => tot()); out.querySelector('#aiDet').addEventListener('change', () => tot());
+  // si on change les grammes d'un ingrédient, on recalcule ses valeurs proportionnellement
   out.querySelectorAll('.ai-row').forEach(row => {
     const gEl = row.querySelector('.gr'); row._g0 = num(gEl.value) || 0;
-    gEl.onchange = () => { const g = num(gEl.value) || 0, g0 = row._g0; if (g0 > 0) for (const c of ['.k', '.p', '.c', '.f', '.fb']) { const el = row.querySelector(c); el.value = r1((num(el.value) || 0) * g / g0); } row._g0 = g; tot(); };    // Une macro corrigée à la main met les calories à jour
-    for (const c of ['.p', '.c', '.f']) row.querySelector(c).oninput = () => { const q = x => num(row.querySelector(x).value) || 0; row.querySelector('.k').value = r0(atwater(q('.p'), q('.c'), q('.f'), q('.fb'))); tot(); };
+    gEl.onchange = () => { const g = num(gEl.value) || 0, g0 = row._g0; if (g0 > 0) for (const c of ['.k', '.p', '.c', '.f', '.fb']) { const el = row.querySelector(c); el.value = r1((num(el.value) || 0) * g / g0); } row._g0 = g; tot(); };
+    // Une macro corrigée à la main met les calories à jour
+    for (const c of ['.p', '.c', '.f']) row.querySelector(c).oninput = () => { row.querySelector('.k').value = r0(atwater(q(row, '.p'), q(row, '.c'), q(row, '.f'), q(row, '.fb'))); tot(); };
   });
   tot();
   $('#aiAdd').onclick = () => {
-    const meal = $('#meal').value; let n = 0;
-    out.querySelectorAll('.ai-row').forEach(row => {
-      if (!row.querySelector('.ck').checked) return;
-      const q = c => num(row.querySelector(c).value) || 0;
-      const g = q('.gr'), vals = { kcal: q('.k'), p: q('.p'), c: q('.c'), f: q('.f'), fib: q('.fb') };
+    const meal = $('#meal').value, list = rows().map(row => {
+      const g = q(row, '.gr'), vals = { kcal: q(row, '.k'), p: q(row, '.p'), c: q(row, '.c'), f: q(row, '.f'), fib: q(row, '.fb') };
       const mi = row.querySelector('.mi'); let m0 = null; try { m0 = JSON.parse(mi.value); } catch (e) {}
       if (m0) { const g0 = +mi.dataset.g0, k0 = +mi.dataset.k0, f = g0 > 0 && g > 0 ? g / g0 : k0 > 0 ? vals.kcal / k0 : 1; vals.m = mulM(m0, f); }
-      const nm = row.querySelector('.nm').value || 'Aliment', gAI = +mi.dataset.g0;
-      if (src === 'photo') recordCalib(nm, gAI, g);
-      day(cur).entries.push({ id: uid(), name: nm, meal, time: defaultTime(meal), grams: g, per: g ? scale(vals, 10000 / g) : null, ...vals, src, ...(src === 'photo' && gAI > 0 ? { aiG: gAI } : {}), ...(+row.querySelector('.nv').value ? { nova: +row.querySelector('.nv').value, novaEst: true } : {}) }); n++;
+      return { name: row.querySelector('.nm').value || 'Aliment', g, gAI: +mi.dataset.g0, vals, nova: +row.querySelector('.nv').value || null };
     });
-    save(); closeSheet(); toast(n + ' aliment(s) ajouté(s)');
+    if (!list.length) return toast('Rien de sélectionné');
+    if ($('#asDish') && $('#asDish').checked && list.length > 1) {
+      // Un seul plat : valeurs additionnées, détail des ingrédients conservé
+      const t = { kcal: 0, p: 0, c: 0, f: 0, fib: 0 }; let m = null, G = 0, GAI = 0, nova = null;
+      for (const x of list) { for (const k in t) t[k] += x.vals[k]; if (x.vals.m) m = addM(m, x.vals.m); G += x.g; GAI += x.gAI || 0; if (x.nova) nova = Math.max(nova || 0, x.nova); }
+      if (m) t.m = m;
+      const name = $('#dName').value.trim() || 'Repas';
+      if (src === 'photo') recordCalib(name, GAI, G);
+      day(cur).entries.push({ id: uid(), name, meal, time: defaultTime(meal), grams: G, per: G ? scale(t, 10000 / G) : null, ...t, src,
+        items: list.map(x => ({ name: x.name, grams: r1(x.g), kcal: r1(x.vals.kcal), p: r1(x.vals.p), c: r1(x.vals.c), f: r1(x.vals.f) })),
+        ...(src === 'photo' && GAI > 0 ? { aiG: GAI } : {}), ...(nova ? { nova, novaEst: true } : {}) });
+      save(); closeSheet(); toast('Plat ajouté'); return;
+    }
+    for (const x of list) {
+      if (src === 'photo') recordCalib(x.name, x.gAI, x.g);
+      day(cur).entries.push({ id: uid(), name: x.name, meal, time: defaultTime(meal), grams: x.g, per: x.g ? scale(x.vals, 10000 / x.g) : null, ...x.vals, src, ...(src === 'photo' && x.gAI > 0 ? { aiG: x.gAI } : {}), ...(x.nova ? { nova: x.nova, novaEst: true } : {}) });
+    }
+    save(); closeSheet(); toast(list.length + ' aliment(s) ajouté(s)');
   };
 }
 
