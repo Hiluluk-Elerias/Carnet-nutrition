@@ -523,7 +523,8 @@ const mulM = (m, f) => { if (!m) return undefined; const o = {}; for (const k in
 const addM = (a, b) => { if (!b) return a; const o = { ...(a || {}) }; for (const k in b) if (b[k] != null) o[k] = (o[k] || 0) + b[k]; return o; };
 // Cache des micronutriments estimés pour un nom d'aliment (pour 100 g), partagé entre appareils
 const microFor = name => (S.microCache || {})[norm(name || '')];
-function withMicros(per, name) { if (!per || per.m) return per; const c = microFor(name); return c ? { ...per, m: c } : per; }
+// Complète les valeurs manquantes (ex. Open Food Facts qui n'a que sucres/AG saturés/sel) sans écraser celles connues
+function withMicros(per, name) { if (!per) return per; const c = microFor(name); if (!c) return per; const m = { ...c }; for (const k in per.m || {}) if (per.m[k] != null) m[k] = per.m[k]; return { ...per, m }; }
 function scale(per, g) { const o = {}; for (const x of ['kcal', 'p', 'c', 'f', 'fib']) o[x] = per[x] == null ? 0 : per[x] * g / 100; if (per.m) o.m = mulM(per.m, g / 100); return o; }
 
 /* ===================== Algorithme adaptatif ===================== */
@@ -721,7 +722,9 @@ function alertBanner() {
 /* ---------- Onglet Nutriments ---------- */
 let nutriPer = '7', nutriPick = false;
 const fmtN = v => v == null ? '–' : Math.abs(v) >= 100 ? r0(v).toLocaleString('fr-FR') : Math.abs(v) >= 10 ? String(r1(v)).replace('.', ',') : String(r2(v)).replace('.', ',');
-const nutV = (e, n) => n.g === 'Macros' ? +e[n.k] || 0 : n.from ? (e.m && e.m[n.from] != null ? e.m[n.from] * n.fx : null) : (e.m && e.m[n.k] != null ? +e.m[n.k] : null);
+// Valeur d'un nutriment pour une entrée ; sinon estimation retenue pour cet aliment (copies, repas habituels, anciennes saisies)
+function microOf(e, k) { if (e.m && e.m[k] != null) return +e.m[k]; if (!(e.grams > 0) || e.sup) return null; const c = microFor(e.name); return c && c[k] != null ? c[k] * e.grams / 100 : null; }
+const nutV = (e, n) => n.g === 'Macros' ? +e[n.k] || 0 : n.from ? (v => v == null ? null : v * n.fx)(microOf(e, n.from)) : microOf(e, n.k);
 const nutShown = () => (S.settings.nutriShown || NUT_DEFAULT).filter(k => NUT_BY[k]);
 function nutRef(n, T) { if (n.g === 'Macros') return T[n.k]; return typeof n.ref === 'function' ? n.ref(T) : n.ref; }
 function nutriDays() {
@@ -807,7 +810,7 @@ function renderNutri() {
   }
   h += `</div>`;
   // Aliments sans micronutriments sur la période
-  const miss = ents.filter(e => !e.m && (+e.kcal || 0) > 0 && e.meal !== 'Import');
+  const miss = ents.filter(e => !e.m && !microFor(e.name) && (+e.kcal || 0) > 0 && e.meal !== 'Import');
   if (days.length && miss.length) {
     const nm = new Set(miss.map(e => norm(e.name))).size;
     h += `<div class="card"><h2>Données manquantes</h2><p class="mute" style="margin:4px 0 10px">${miss.length} aliment${miss.length > 1 ? 's' : ''} de la période n’${miss.length > 1 ? 'ont' : 'a'} aucun micronutriment (aliments de base, produits Open Food Facts incomplets, saisies manuelles). L’IA peut les estimer d’après la table Ciqual : ${nm} nom${nm > 1 ? 's' : ''} différent${nm > 1 ? 's' : ''}, quelques centimes au plus.</p>
