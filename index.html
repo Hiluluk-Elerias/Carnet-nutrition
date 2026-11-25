@@ -691,7 +691,9 @@ const NUT_UL = { vA: 3000, vD: 100, vE: 300, b6: 12, zn: 25, se: 255, ca: 2500, 
 function nutAlerts() {
   const t = today(), days = [...Array(7)].map((_, i) => addDays(t, -1 - i)).filter(hasIntake);
   if (days.length < 3) return { days, list: [] };
-  const { out } = nutStats(days), T = targets(), list = [];
+  // Alimentation : moyenne des 7 derniers jours ; compléments : ce qu'ils apportent en ce moment (une ampoule prise hier couvre les semaines à venir)
+  const { out } = nutStats(days, true), T = targets(), list = [];
+  for (const s of S.supps || []) if (supActive(s, t) && out[s.k]) { out[s.k].avg += s.amount / supDays(s); out[s.k].supNow = true; }
   for (const n of NUT) {
     if (n.k === 'na') continue; // déjà couvert par le sel
     const o = out[n.k], ref = nutRef(n, T), ul = NUT_UL[n.k]; if (!o || o.cov < 0.8) continue; // trop peu de données : pas d'alerte
@@ -706,7 +708,7 @@ function nutAlerts() {
 function alertsCard(A) {
   if (!A.list.length) return A.days.length >= 3 ? `<div class="card"><h2>Points de vigilance</h2><p class="mute" style="margin:4px 0 0">Rien à signaler sur les ${A.days.length} derniers jours pour les nutriments suffisamment renseignés.</p></div>` : '';
   return `<div class="card"><h2>Points de vigilance</h2><div class="mute xs" style="margin-bottom:6px">Moyenne des ${A.days.length} derniers jours complets</div>
-    ${A.list.map(a => `<div class="alr"><span class="ald" style="background:${a.lvl === 2 ? 'var(--danger)' : 'var(--acc2)'}"></span><div><b>${esc(a.n.l)} ${a.hi ? 'trop élevé' : a.lvl === 2 ? 'très bas' : 'un peu bas'}</b><div class="mute xs">${a.txt}${a.o.cov < 0.95 ? ' · données partielles' : ''}</div>${NUT_TIP[a.n.k] ? `<div class="xs" style="margin-top:3px">${a.hi ? 'À surveiller' : 'Sources'} : ${NUT_TIP[a.n.k]}</div>` : ''}</div></div>`).join('')}
+    ${A.list.map(a => `<div class="alr"><span class="ald" style="background:${a.lvl === 2 ? 'var(--danger)' : 'var(--acc2)'}"></span><div><b>${esc(a.n.l)} ${a.hi ? 'trop élevé' : a.lvl === 2 ? 'très bas' : 'un peu bas'}</b><div class="mute xs">${a.txt}${a.o.supNow ? ' · compléments inclus' : ''}${a.o.cov < 0.95 ? ' · données partielles' : ''}</div>${NUT_TIP[a.n.k] ? `<div class="xs" style="margin-top:3px">${a.hi ? 'À surveiller' : 'Sources'} : ${NUT_TIP[a.n.k]}</div>` : ''}</div></div>`).join('')}
     <label class="row" style="color:var(--ink);font-size:13.5px;margin-top:10px"><input type="checkbox" id="alJ" ${S.settings.nutriAlertJ === false ? '' : 'checked'}> Signaler dans le journal</label>
     <p class="mute xs" style="margin:6px 0 0">Repères pour la population générale, pas un avis médical. Un manque qui dure plusieurs semaines mérite d’en parler à ton médecin.</p></div>`;
 }
@@ -767,8 +769,8 @@ function openSupp(id) {
     S.supps = (S.supps || []).filter(x => x.id !== s.id).concat(s); save(); closeSheet(); render(); toast('Complément enregistré');
   };
 }
-function nutStats(days) {
-  const ents = days.flatMap(k => [...S.days[k].entries, ...supEntries(k)]), kcal = ents.reduce((s, e) => s + (+e.kcal || 0), 0), out = {};
+function nutStats(days, noSup) {
+  const ents = days.flatMap(k => [...S.days[k].entries, ...(noSup ? [] : supEntries(k))]), kcal = ents.reduce((s, e) => s + (+e.kcal || 0), 0), out = {};
   for (const n of NUT_ALL) {
     let sum = 0, kk = 0, cnt = 0;
     for (const e of ents) { const v = nutV(e, n); if (v != null) { sum += v; kk += +e.kcal || 0; cnt++; } }
