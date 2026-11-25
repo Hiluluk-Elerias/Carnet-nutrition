@@ -323,18 +323,22 @@ const ghUrl = path => `https://api.github.com/repos/${encodeURIComponent(CFG.own
 const ghHeaders = () => ({ Authorization: `Bearer ${CFG.token.trim()}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' });
 class GhError extends Error { constructor(status, msg) { super(msg); this.status = status; } }
 const ghMsg = st => st === 401 ? 'Jeton GitHub refusé (expiré ou mal copié).' : st === 403 ? 'Le jeton n’a pas le droit d’écrire dans ce dépôt (Contents : lecture et écriture).' : st === 404 ? 'Dépôt introuvable : vérifie son nom et que le jeton y a accès.' : `GitHub a répondu ${st}.`;
+// Les erreurs 5xx de GitHub sont souvent passagères (écritures rapprochées sur le dépôt) : jusqu'à 3 essais espacés
+async function ghFetch(url, opt) {
+  for (let i = 0; ; i++) { const r = await fetch(url, opt); if (r.status < 500 || i >= 2) return r; await new Promise(z => setTimeout(z, 1500 * (i + 1))); }
+}
 async function ghGet(path) {
-  const r = await fetch(ghUrl(path) + `?ref=${encodeURIComponent(CFG.branch)}&t=${Date.now()}`, { headers: ghHeaders(), cache: 'no-store' });
+  const r = await ghFetch(ghUrl(path).replace(/\/$/, '') + `?ref=${encodeURIComponent(CFG.branch)}&t=${Date.now()}`, { headers: ghHeaders(), cache: 'no-store' });
   if (r.status === 404) return null;
-  if (!r.ok) throw new GhError(r.status, ghMsg(r.status));
+  if (!r.ok) throw new GhError(r.status, ghMsg(r.status) + (r.status >= 500 ? ` (lecture de ${path || 'la racine'})` : ''));
   const j = await r.json();
   if (Array.isArray(j)) return { list: j };
   return { sha: j.sha, json: JSON.parse(b64dec(j.content || '') || '{}') };
 }
 async function ghPut(path, obj, sha, message) {
   const body = { message, content: b64enc(JSON.stringify(obj) + '\n'), branch: CFG.branch }; if (sha) body.sha = sha;
-  const r = await fetch(ghUrl(path), { method: 'PUT', headers: { ...ghHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  if (!r.ok) throw new GhError(r.status, r.status === 409 || r.status === 422 ? 'conflit' : ghMsg(r.status));
+  const r = await ghFetch(ghUrl(path), { method: 'PUT', headers: { ...ghHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!r.ok) throw new GhError(r.status, r.status === 409 || r.status === 422 ? 'conflit' : ghMsg(r.status) + (r.status >= 500 ? ` (envoi de ${path})` : ''));
   return (await r.json()).content.sha;
 }
 const dayUsed = d => d && (d.entries.length || d.weight != null || d.bf != null || d.steps != null || (d.meas && Object.keys(d.meas).length));
