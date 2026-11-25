@@ -299,7 +299,7 @@ function defaults() {
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY));
-    if (s) { const d = defaults(); s.settings = { ...d.settings, ...s.settings }; s.days = s.days || {}; s.foods = s.foods || []; s.mf = s.mf || {}; s.recipes = s.recipes || []; s.meals = s.meals || []; s.aiUsage = s.aiUsage || {}; s.checkins = s.checkins || []; s.microCache = s.microCache || {}; s.pieces = s.pieces || {}; s.supps = s.supps || []; return s; }
+    if (s) { const d = defaults(); s.settings = { ...d.settings, ...s.settings }; s.days = s.days || {}; s.foods = s.foods || []; s.mf = s.mf || {}; s.recipes = s.recipes || []; s.meals = s.meals || []; s.aiUsage = s.aiUsage || {}; s.checkins = s.checkins || []; s.microCache = s.microCache || {}; s.pieces = s.pieces || {}; s.supps = s.supps || []; s.aiCalib = s.aiCalib || []; return s; }
   } catch (e) {}
   return defaults();
 }
@@ -343,7 +343,7 @@ async function ghPut(path, obj, sha, message) {
 }
 const dayUsed = d => d && (d.entries.length || d.weight != null || d.bf != null || d.steps != null || (d.meas && Object.keys(d.meas).length));
 function localMonth(m) { const o = {}; for (const [k, d] of Object.entries(S.days)) if (k.startsWith(m) && dayUsed(d)) o[k] = d; return o; }
-function profil() { const { apiKey, ...settings } = S.settings; return { version: 1, settings, foods: S.foods, recipes: S.recipes, meals: S.meals, mf: S.mf, aiUsage: S.aiUsage || {}, checkins: S.checkins || [], microCache: S.microCache || {}, pieces: S.pieces || {}, supps: S.supps || [] }; }
+function profil() { const { apiKey, ...settings } = S.settings; return { version: 1, settings, foods: S.foods, recipes: S.recipes, meals: S.meals, mf: S.mf, aiUsage: S.aiUsage || {}, checkins: S.checkins || [], microCache: S.microCache || {}, pieces: S.pieces || {}, supps: S.supps || [], aiCalib: S.aiCalib || [] }; }
 let syncTimer = null, syncing = false, syncAgain = false;
 function scheduleSync(ms = 2000) { if (!CFG.token) return; clearTimeout(syncTimer); syncTimer = setTimeout(sync, ms); }
 function setSync(state, text) {
@@ -392,7 +392,7 @@ async function syncProfil(remoteSha) {
       const g = await ghGet(path), r = (g && g.json) || {}, b = JSON.parse(base || '{}'), same = (x, y) => JSON.stringify(x) === JSON.stringify(y);
       if (g) { sha = g.sha; for (const k of Object.keys(r)) if (k !== 'settings' && same(out[k], b[k]) && !same(r[k], b[k])) out[k] = r[k];
         const ls = out.settings || {}, bs = b.settings || {}, rs = r.settings || {}; for (const k of Object.keys(rs)) if (same(ls[k], bs[k])) ls[k] = rs[k];
-        S.settings = { ...S.settings, ...ls }; for (const k of ['foods', 'mf', 'recipes', 'meals', 'aiUsage', 'checkins', 'microCache', 'pieces', 'supps']) if (out[k] !== undefined) S[k] = out[k]; saveLocal(); }
+        S.settings = { ...S.settings, ...ls }; for (const k of ['foods', 'mf', 'recipes', 'meals', 'aiUsage', 'checkins', 'microCache', 'pieces', 'supps', 'aiCalib']) if (out[k] !== undefined) S[k] = out[k]; saveLocal(); }
     }
     for (let attempt = 0; attempt < 3; attempt++) {
       try { META.sha[path] = await ghPut(path, out, sha, 'Réglages et aliments'); META.base[path] = JSON.stringify(profil()); return; }
@@ -402,7 +402,7 @@ async function syncProfil(remoteSha) {
   const g = await ghGet(path); if (!g) return;
   const p = g.json || {};
   S.settings = { ...S.settings, ...(p.settings || {}), apiKey: S.settings.apiKey };
-  S.foods = p.foods || S.foods; S.mf = p.mf || S.mf; S.recipes = p.recipes || S.recipes; S.meals = p.meals || S.meals; S.aiUsage = p.aiUsage || S.aiUsage || {}; S.checkins = p.checkins || S.checkins || []; S.microCache = p.microCache || S.microCache || {}; S.pieces = p.pieces || S.pieces || {}; S.supps = p.supps || S.supps || [];
+  S.foods = p.foods || S.foods; S.mf = p.mf || S.mf; S.recipes = p.recipes || S.recipes; S.meals = p.meals || S.meals; S.aiUsage = p.aiUsage || S.aiUsage || {}; S.checkins = p.checkins || S.checkins || []; S.microCache = p.microCache || S.microCache || {}; S.pieces = p.pieces || S.pieces || {}; S.supps = p.supps || S.supps || []; S.aiCalib = p.aiCalib || S.aiCalib || [];
   META.sha[path] = g.sha; META.base[path] = JSON.stringify(profil());
 }
 async function sync() {
@@ -1273,6 +1273,8 @@ function openQty(food, editIndex, opts = {}) {
     // Fibres complétées : on les retient aussi dans « Mes aliments » si le produit y est
     if ($('#fibIn') && num($('#fibIn').value) != null) { const mf = S.foods.find(f => f.name === food.name || (food.code && f.code === food.code)); if (mf) mf.per = { ...mf.per, fib: num($('#fibIn').value) }; }
     if (ingDraft && !e) { if ($('#keep') && $('#keep').checked) S.foods.push({ id: uid(), name: food.name, code: food.code, per: food.per, serving: food.serving || g }); return addIngredient(entry); }
+    if (e) { for (const k of ['src', 'aiG', 'nova', 'novaEst', 'mEst']) if (e[k] != null && entry[k] == null) entry[k] = e[k];
+      if (e.src === 'photo' && Math.abs(g - (e.grams || 0)) > 0.5) { const aiG = e.aiG || e.grams; entry.aiG = aiG; S.aiCalib = (S.aiCalib || []).filter(c => !(c.n === String(food.name).slice(0, 60) && c.ai === Math.round(aiG) && c.d === today())); recordCalib(food.name, aiG, g); } }
     if (e) S.days[cur].entries[editIndex] = entry; else day(cur).entries.push(entry);
     if ($('#keep') && $('#keep').checked) S.foods.push({ id: uid(), name: food.name, code: food.code, per: perNow(), serving: food.serving || g });
     save(); closeSheet(); toast(e ? 'Modifié' : 'Ajouté');
@@ -1727,6 +1729,16 @@ function openFiberIdeas() {
     <div id="fibl">${list.map((f, i) => `<div class="it fib-it" data-i="${i}"><div class="irow">${fi(f.name)}<div><div style="font-weight:600">${esc(f.name)}</div><div class="mute xs">${r0(f.serving)} g · ${r0(f.kc)} kcal</div></div></div><b style="color:var(--fib);white-space:nowrap">+${r1(f.gain)} g</b></div>`).join('')}</div>`);
   document.querySelectorAll('#fibl .it').forEach(el => el.onclick = () => { const f = list[+el.dataset.i]; openQty({ name: f.name, per: f.per, serving: f.serving }); });
 }
+// Calibration personnelle : quand tu corriges le poids estimé par l'IA (balance), l'écart est retenu et rappelé dans les prochaines analyses
+function recordCalib(name, ai, real) {
+  if (!(ai > 0) || !(real > 0) || Math.abs(real - ai) / ai < 0.1) return;
+  S.aiCalib = [...(S.aiCalib || []), { n: String(name).slice(0, 60), ai: Math.round(ai), real: Math.round(real), d: today() }].slice(-40);
+}
+function aiCalibText() {
+  const L = (S.aiCalib || []).slice(-15); if (!L.length) return '';
+  const ratio = L.reduce((s, c) => s + Math.log(c.real / c.ai), 0) / L.length, pct = Math.round((Math.exp(ratio) - 1) * 100);
+  return `\n   Corrections faites par l’utilisateur après pesée sur ses photos précédentes (tiens-en compte, ses assiettes et portions suivent ces tendances${pct ? ` ; en moyenne tes estimations étaient ${pct > 0 ? 'trop faibles' : 'trop fortes'} de ${Math.abs(pct)} %` : ''}) :\n` + L.map(c => `   - ${c.n} : estimé ${c.ai} g, pesé ${c.real} g`).join('\n');
+}
 async function analysePhoto(file) {
   const out = $('#aiRes'); if (!out) return;
   out.innerHTML = '<p class="mute">Analyse en cours…</p>';
@@ -1735,7 +1747,7 @@ async function analysePhoto(file) {
     const hint = ($('#hint') && $('#hint').value.trim()) || '';
     const prompt = `Tu es nutritionniste. Analyse cette photo de repas.
 1. Identifie chaque composant visible, y compris ce qui est dessous ou mélangé (féculents sous la garniture, sauce, huile).
-2. Estime le poids de chaque composant tel que servi (cuit) en t’aidant de la taille de l’assiette ou du bol (assiette ≈ 26 cm, bol ≈ 15 cm), des couverts et de la hauteur des aliments. Les quantités sont souvent SOUS-estimées sur photo : un bol de nouilles ou de pâtes contient en général 250 à 350 g cuits, une assiette de riz 200 à 250 g.
+2. Estime le poids de chaque composant tel que servi (cuit) d’après la surface qu’il occupe et son épaisseur, en t’aidant de la taille de l’assiette ou du bol (assiette ≈ 26 cm, bol ≈ 15 cm) et des couverts. Ne pars pas d’une portion « type » : une portion de pâtes ou de riz cuits va de 100 g (petite) à 300 g (grande), décide d’après ce que tu vois.${aiCalibText()}
 3. Compte les matières grasses de cuisson et les sauces comme des éléments à part, même si elles se voient peu.
 4. Donne les valeurs nutritionnelles pour ces quantités (table Ciqual si possible ; glucides hors fibres).${hint ? ' Précisions de l’utilisateur : ' + hint : ''}
 5. ${AI_NOVA}
@@ -1756,7 +1768,7 @@ function showAiItems(items, src = 'photo') {
     <input type="hidden" class="fb" value="${r1(it.fibres)}"><input type="hidden" class="mi" value="${esc(JSON.stringify(aiMicros(it.micro) || null))}" data-g0="${num(it.grammes) || 0}" data-k0="${num(it.kcal) || 0}"><input type="hidden" class="nv" value="${[1, 2, 3, 4].includes(+it.nova) ? +it.nova : ''}"></div>`).join('') +
     `<div class="card" id="aiTot" style="margin:10px 0 6px"></div>
      <label>Portion globale (si l’estimation te paraît trop petite ou trop grande)</label>
-     <div class="row wrap" id="aiScale">${[0.75, 1, 1.25, 1.5].map(x => `<button class="btn sm ${x === 1 ? 'pri' : ''}" data-x="${x}">×${String(x).replace('.', ',')}</button>`).join('')}</div>
+     <div class="row wrap" id="aiScale">${[0.5, 0.75, 1, 1.25, 1.5].map(x => `<button class="btn sm ${x === 1 ? 'pri' : ''}" data-x="${x}">×${String(x).replace('.', ',')}</button>`).join('')}</div>
      <div class="row" style="margin-top:10px"><label style="margin:0">Repas</label>${mealSelect(null)}</div>
      <button class="btn pri" id="aiAdd" style="margin-top:10px">Ajouter la sélection</button>`;
   const tot = () => { const t = { kcal: 0, p: 0, c: 0, f: 0 }; out.querySelectorAll('.ai-row').forEach(row => { if (!row.querySelector('.ck').checked) return; t.kcal += num(row.querySelector('.k').value) || 0; t.p += num(row.querySelector('.p').value) || 0; t.c += num(row.querySelector('.c').value) || 0; t.f += num(row.querySelector('.f').value) || 0; });
@@ -1783,7 +1795,9 @@ function showAiItems(items, src = 'photo') {
       const g = q('.gr'), vals = { kcal: q('.k'), p: q('.p'), c: q('.c'), f: q('.f'), fib: q('.fb') };
       const mi = row.querySelector('.mi'); let m0 = null; try { m0 = JSON.parse(mi.value); } catch (e) {}
       if (m0) { const g0 = +mi.dataset.g0, k0 = +mi.dataset.k0, f = g0 > 0 && g > 0 ? g / g0 : k0 > 0 ? vals.kcal / k0 : 1; vals.m = mulM(m0, f); }
-      day(cur).entries.push({ id: uid(), name: row.querySelector('.nm').value || 'Aliment', meal, time: defaultTime(meal), grams: g, per: g ? scale(vals, 10000 / g) : null, ...vals, src, ...(+row.querySelector('.nv').value ? { nova: +row.querySelector('.nv').value, novaEst: true } : {}) }); n++;
+      const nm = row.querySelector('.nm').value || 'Aliment', gAI = +mi.dataset.g0;
+      if (src === 'photo') recordCalib(nm, gAI, g);
+      day(cur).entries.push({ id: uid(), name: nm, meal, time: defaultTime(meal), grams: g, per: g ? scale(vals, 10000 / g) : null, ...vals, src, ...(src === 'photo' && gAI > 0 ? { aiG: gAI } : {}), ...(+row.querySelector('.nv').value ? { nova: +row.querySelector('.nv').value, novaEst: true } : {}) }); n++;
     });
     save(); closeSheet(); toast(n + ' aliment(s) ajouté(s)');
   };
