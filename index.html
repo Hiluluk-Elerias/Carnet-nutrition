@@ -299,7 +299,7 @@ function defaults() {
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY));
-    if (s) { const d = defaults(); s.settings = { ...d.settings, ...s.settings }; s.days = s.days || {}; s.foods = s.foods || []; s.mf = s.mf || {}; s.recipes = s.recipes || []; s.meals = s.meals || []; s.aiUsage = s.aiUsage || {}; s.checkins = s.checkins || []; s.microCache = s.microCache || {}; s.pieces = s.pieces || {}; return s; }
+    if (s) { const d = defaults(); s.settings = { ...d.settings, ...s.settings }; s.days = s.days || {}; s.foods = s.foods || []; s.mf = s.mf || {}; s.recipes = s.recipes || []; s.meals = s.meals || []; s.aiUsage = s.aiUsage || {}; s.checkins = s.checkins || []; s.microCache = s.microCache || {}; s.pieces = s.pieces || {}; s.supps = s.supps || []; return s; }
   } catch (e) {}
   return defaults();
 }
@@ -339,7 +339,7 @@ async function ghPut(path, obj, sha, message) {
 }
 const dayUsed = d => d && (d.entries.length || d.weight != null || d.bf != null || d.steps != null || (d.meas && Object.keys(d.meas).length));
 function localMonth(m) { const o = {}; for (const [k, d] of Object.entries(S.days)) if (k.startsWith(m) && dayUsed(d)) o[k] = d; return o; }
-function profil() { const { apiKey, ...settings } = S.settings; return { version: 1, settings, foods: S.foods, recipes: S.recipes, meals: S.meals, mf: S.mf, aiUsage: S.aiUsage || {}, checkins: S.checkins || [], microCache: S.microCache || {}, pieces: S.pieces || {} }; }
+function profil() { const { apiKey, ...settings } = S.settings; return { version: 1, settings, foods: S.foods, recipes: S.recipes, meals: S.meals, mf: S.mf, aiUsage: S.aiUsage || {}, checkins: S.checkins || [], microCache: S.microCache || {}, pieces: S.pieces || {}, supps: S.supps || [] }; }
 let syncTimer = null, syncing = false, syncAgain = false;
 function scheduleSync(ms = 2000) { if (!CFG.token) return; clearTimeout(syncTimer); syncTimer = setTimeout(sync, ms); }
 function setSync(state, text) {
@@ -388,7 +388,7 @@ async function syncProfil(remoteSha) {
       const g = await ghGet(path), r = (g && g.json) || {}, b = JSON.parse(base || '{}'), same = (x, y) => JSON.stringify(x) === JSON.stringify(y);
       if (g) { sha = g.sha; for (const k of Object.keys(r)) if (k !== 'settings' && same(out[k], b[k]) && !same(r[k], b[k])) out[k] = r[k];
         const ls = out.settings || {}, bs = b.settings || {}, rs = r.settings || {}; for (const k of Object.keys(rs)) if (same(ls[k], bs[k])) ls[k] = rs[k];
-        S.settings = { ...S.settings, ...ls }; for (const k of ['foods', 'mf', 'recipes', 'meals', 'aiUsage', 'checkins', 'microCache', 'pieces']) if (out[k] !== undefined) S[k] = out[k]; saveLocal(); }
+        S.settings = { ...S.settings, ...ls }; for (const k of ['foods', 'mf', 'recipes', 'meals', 'aiUsage', 'checkins', 'microCache', 'pieces', 'supps']) if (out[k] !== undefined) S[k] = out[k]; saveLocal(); }
     }
     for (let attempt = 0; attempt < 3; attempt++) {
       try { META.sha[path] = await ghPut(path, out, sha, 'Réglages et aliments'); META.base[path] = JSON.stringify(profil()); return; }
@@ -398,7 +398,7 @@ async function syncProfil(remoteSha) {
   const g = await ghGet(path); if (!g) return;
   const p = g.json || {};
   S.settings = { ...S.settings, ...(p.settings || {}), apiKey: S.settings.apiKey };
-  S.foods = p.foods || S.foods; S.mf = p.mf || S.mf; S.recipes = p.recipes || S.recipes; S.meals = p.meals || S.meals; S.aiUsage = p.aiUsage || S.aiUsage || {}; S.checkins = p.checkins || S.checkins || []; S.microCache = p.microCache || S.microCache || {}; S.pieces = p.pieces || S.pieces || {};
+  S.foods = p.foods || S.foods; S.mf = p.mf || S.mf; S.recipes = p.recipes || S.recipes; S.meals = p.meals || S.meals; S.aiUsage = p.aiUsage || S.aiUsage || {}; S.checkins = p.checkins || S.checkins || []; S.microCache = p.microCache || S.microCache || {}; S.pieces = p.pieces || S.pieces || {}; S.supps = p.supps || S.supps || [];
   META.sha[path] = g.sha; META.base[path] = JSON.stringify(profil());
 }
 async function sync() {
@@ -726,12 +726,53 @@ function nutriDays() {
   if (nutriPer === 'jour') return hasIntake(cur) ? [cur] : [];
   const t = today(); return [...Array(+nutriPer)].map((_, i) => addDays(t, -1 - i)).filter(hasIntake); // jours complets (aujourd'hui exclu)
 }
+/* ---------- Compléments alimentaires ---------- */
+// Une dose (ex. ampoule de vitamine D) est répartie sur sa période : 50 000 UI tous les mois = ~1 667 UI/jour en moyenne
+const SUP_FREQ = [[1, 'Chaque jour'], [7, 'Chaque semaine'], [14, 'Toutes les 2 semaines'], [30, 'Chaque mois'], [60, 'Tous les 2 mois'], [90, 'Tous les 3 mois'], [0, 'Prise unique (sur 30 jours)']];
+const SUP_UI = { vD: 0.025, vA: 0.3, vE: 0.67 }; // µg ou mg par UI
+const supDays = s => +s.every || 30;
+const supActive = (s, k) => k >= s.start && k < (s.end ? addDays(s.end, 1) : s.every == 0 ? addDays(s.start, 30) : '9999');
+function supEntries(k) { // apports « virtuels » du jour pour les calculs de nutriments (0 kcal)
+  return (S.supps || []).filter(s => supActive(s, k)).map(s => ({ name: '💊 ' + s.name, kcal: 0, sup: true, m: { [s.k]: s.amount / supDays(s) } }));
+}
+function suppCard() {
+  const L = S.supps || [], t = today();
+  return `<div class="card"><h2>Compléments</h2>
+    ${L.length ? L.map(s => { const n = NUT_BY[s.k], on = supActive(s, t) || s.start > t; return `<div class="alr" style="align-items:center"><div style="flex:1"><b>${esc(s.name)}</b>${on ? '' : ' <span class="mute xs">(terminé)</span>'}<div class="mute xs">${fmtN(s.dose)} ${esc(s.du)} · ${(SUP_FREQ.find(f => f[0] == s.every) || [, ''])[1].toLowerCase()} · ≈ ${fmtN(s.amount / supDays(s))} ${n.u}/jour de ${esc(n.l.toLowerCase())}</div></div><button class="btn sm" data-sup="${s.id}">Modifier</button></div>`; }).join('')
+      : '<p class="mute" style="margin:4px 0 8px">Ampoule de vitamine D, magnésium, oméga-3… Ajoute-les pour qu’ils comptent dans tes moyennes, répartis sur leur période.</p>'}
+    <button class="btn" id="supAdd" style="margin-top:8px">+ Ajouter un complément</button></div>`;
+}
+function openSupp(id) {
+  const s0 = (S.supps || []).find(x => x.id === id) || { name: '', k: 'vD', dose: '', du: 'UI', every: 30, start: today(), end: '' };
+  const opts = NUT.filter(n => !n.from).map(n => `<option value="${n.k}" ${n.k === s0.k ? 'selected' : ''}>${esc(n.l)}</option>`).join('');
+  openSheet(`<h3>${id ? 'Modifier le complément' : 'Nouveau complément'}</h3>
+    <label>Nom</label><input id="sN" value="${esc(s0.name)}" placeholder="ex. Vitamine D 50 000 UI (ampoule)">
+    <div class="grid2" style="margin-top:8px"><div><label>Nutriment</label><select id="sK">${opts}</select></div><div><label>Fréquence</label><select id="sF">${SUP_FREQ.map(([v, l]) => `<option value="${v}" ${v == s0.every ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+    <div><label>Dose par prise</label><input id="sD" type="number" inputmode="decimal" value="${s0.dose}"></div><div><label>Unité</label><select id="sU"></select></div>
+    <div><label>Depuis le</label><input id="sS" type="date" value="${s0.start}"></div><div><label>Jusqu’au (facultatif)</label><input id="sE" type="date" value="${s0.end || ''}"></div></div>
+    <div id="sInfo" class="mute" style="margin:10px 0"></div>
+    <div class="row wrap"><button class="btn pri" id="sOk">Enregistrer</button>${id ? '<button class="btn danger" id="sDel">Supprimer</button>' : ''}<button class="btn" id="cancel">Annuler</button></div>`);
+  const units = () => { const n = NUT_BY[$('#sK').value], u = [n.u, ...(SUP_UI[n.k] ? ['UI'] : [])], cur0 = $('#sU').value || s0.du;
+    $('#sU').innerHTML = u.map(x => `<option ${x === cur0 ? 'selected' : ''}>${x}</option>`).join(''); };
+  const amount = () => { const n = NUT_BY[$('#sK').value], d = num($('#sD').value) || 0; return $('#sU').value === 'UI' ? d * SUP_UI[n.k] : d; };
+  const info = () => { const n = NUT_BY[$('#sK').value], f = +$('#sF').value || 30, a = amount() / f, ref = nutRef(n, targets()), ul = NUT_UL[n.k];
+    $('#sInfo').innerHTML = amount() ? `Soit en moyenne <b>${fmtN(a)} ${n.u}/jour</b>${n.k === 'vD' ? ` (${fmtN(a / 0.025)} UI)` : ''}${ref ? ` · repère ${fmtN(ref)} ${n.u}` : ''}${ul && a > ul ? ` · <span style="color:var(--danger)">au-dessus de la limite de sécurité (${fmtN(ul)} ${n.u}/j)</span>` : ''}.` : ''; };
+  units(); info();
+  $('#sK').onchange = () => { units(); info(); }; ['#sD', '#sU', '#sF'].forEach(x => $(x).oninput = $(x).onchange = info);
+  $('#cancel').onclick = closeSheet;
+  if (id) $('#sDel').onclick = () => { S.supps = S.supps.filter(x => x.id !== id); save(); closeSheet(); render(); };
+  $('#sOk').onclick = () => {
+    if (!amount()) return toast('Indique la dose');
+    const n = NUT_BY[$('#sK').value], s = { id: id || uid(), name: $('#sN').value.trim() || n.l, k: n.k, dose: num($('#sD').value), du: $('#sU').value, amount: amount(), every: +$('#sF').value, start: $('#sS').value || today(), end: $('#sE').value || '' };
+    S.supps = (S.supps || []).filter(x => x.id !== s.id).concat(s); save(); closeSheet(); render(); toast('Complément enregistré');
+  };
+}
 function nutStats(days) {
-  const ents = days.flatMap(k => S.days[k].entries), kcal = ents.reduce((s, e) => s + (+e.kcal || 0), 0), out = {};
+  const ents = days.flatMap(k => [...S.days[k].entries, ...supEntries(k)]), kcal = ents.reduce((s, e) => s + (+e.kcal || 0), 0), out = {};
   for (const n of NUT_ALL) {
     let sum = 0, kk = 0, cnt = 0;
     for (const e of ents) { const v = nutV(e, n); if (v != null) { sum += v; kk += +e.kcal || 0; cnt++; } }
-    out[n.k] = { avg: days.length ? sum / days.length : 0, cov: kcal > 0 ? kk / kcal : ents.length ? cnt / ents.length : 0 };
+    out[n.k] = { sup: ents.some(e => e.sup && e.m[n.k]), avg: days.length ? sum / days.length : 0, cov: kcal > 0 ? kk / kcal : ents.length ? cnt / ents.length : 0 };
   }
   return { out, ents };
 }
@@ -754,7 +795,7 @@ function renderNutri() {
     for (const k of shown) {
       const n = NUT_BY[k], o = out[k], ref = nutRef(n, T), pct = ref > 0 ? o.avg / ref * 100 : null;
       if (n.g !== lastG) { h += `<div class="ngh">${n.g}</div>`; lastG = n.g; }
-      const none = o.cov === 0 && n.g !== 'Macros', part = !none && n.g !== 'Macros' && o.cov < 0.95;
+      const none = o.cov === 0 && !o.sup && n.g !== 'Macros', part = !none && n.g !== 'Macros' && o.cov < 0.95;
       const over = n.t === 'max' && pct > 100, col = n.g === 'Macros' ? `var(--${k})` : over ? 'var(--danger)' : n.t === 'max' ? 'var(--acc2)' : pct >= 100 ? 'var(--c)' : 'var(--acc)';
       const refTxt = ref > 0 ? `${n.t === 'max' ? '≤ ' : n.t === 'min' ? '≥ ' : '/ '}${fmtN(ref)}` : '';
       h += `<div class="nrow" data-nrow="${k}"><div class="nl"><span>${esc(n.l)}</span><span class="nv">${none ? '<span class="mute">pas de données</span>' : `${part ? '≈ ' : ''}<b>${fmtN(o.avg)}</b> ${n.u}${refTxt ? ` <span class="mute">${refTxt}</span>` : ''}${pct != null ? ` <span class="np" style="color:${over ? 'var(--danger)' : 'var(--mute)'}">${r0(pct)} %</span>` : ''}`}</span></div>
@@ -770,6 +811,7 @@ function renderNutri() {
     h += `<div class="card"><h2>Données manquantes</h2><p class="mute" style="margin:4px 0 10px">${miss.length} aliment${miss.length > 1 ? 's' : ''} de la période n’${miss.length > 1 ? 'ont' : 'a'} aucun micronutriment (aliments de base, produits Open Food Facts incomplets, saisies manuelles). L’IA peut les estimer d’après la table Ciqual : ${nm} nom${nm > 1 ? 's' : ''} différent${nm > 1 ? 's' : ''}, quelques centimes au plus.</p>
       <button class="btn pri" id="estM">Estimer avec l’IA</button></div>`;
   }
+  h += suppCard();
   h += `<p class="mute xs" style="margin:0 4px 20px">Touchez une ligne pour voir les aliments qui y contribuent le plus. Repères indicatifs pour un homme adulte (ANSES / EFSA) ; les macros suivent tes objectifs. Les valeurs viennent de MacroFactor, d’Open Food Facts, des étiquettes et des estimations IA.</p>`;
   $('#main').innerHTML = h;
   if (nutriPer === 'jour') bindWeek();
@@ -780,6 +822,7 @@ function renderNutri() {
   if ($('#nDef')) { $('#nDef').onclick = () => setShown(null); $('#nAll').onclick = () => setShown(NUT_ALL.map(n => n.k)); $('#nNone').onclick = () => setShown(MACRO_ROWS.map(n => n.k)); }
   document.querySelectorAll('[data-nrow]').forEach(el => el.onclick = () => openNutTop(NUT_BY[el.dataset.nrow], ents, days.length));
   if ($('#estM')) $('#estM').onclick = () => estimateMicrosAI(miss);
+  $('#supAdd').onclick = () => openSupp(); document.querySelectorAll('[data-sup]').forEach(b => b.onclick = () => openSupp(b.dataset.sup));
   if ($('#alJ')) $('#alJ').onchange = () => { S.settings.nutriAlertJ = $('#alJ').checked; save(); };
 }
 function openNutTop(n, ents, nd) {
