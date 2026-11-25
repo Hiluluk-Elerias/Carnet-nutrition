@@ -35,6 +35,10 @@ jobs:
           npx cap add android
           npx --yes @capacitor/assets@3.0.5 generate --android --iconBackgroundColor '#14181d' --iconBackgroundColorDark '#14181d' --splashBackgroundColor '#14181d' --splashBackgroundColorDark '#14181d' || echo "::warning::Icônes non générées, icône Capacitor par défaut"
           npx cap sync android
+          # Activité principale personnalisée (marges barre d'état / navigation)
+          MA=$(find android/app/src/main/java -name MainActivity.java)
+          cp android-src/MainActivity.java "$MA"
+          head -3 "$MA"
           MANIFEST=android/app/src/main/AndroidManifest.xml
           grep -q android.permission.CAMERA "$MANIFEST" || sed -i 's#</manifest>#    <uses-permission android:name="android.permission.CAMERA" />\n</manifest>#' "$MANIFEST"
           grep -q POST_NOTIFICATIONS "$MANIFEST" || sed -i 's#</manifest>#    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n</manifest>#' "$MANIFEST"
