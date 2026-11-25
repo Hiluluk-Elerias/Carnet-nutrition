@@ -5,9 +5,12 @@
   "server": {
     "url": "https://hiluluk-elerias.github.io/Carnet-nutrition/",
     "errorPath": "hors-ligne.html",
-    "allowNavigation": ["hiluluk-elerias.github.io"]
+    "allowNavigation": [
+      "hiluluk-elerias.github.io"
+    ]
   },
   "android": {
-    "backgroundColor": "#14181d"
+    "backgroundColor": "#14181d",
+    "adjustMarginsForEdgeToEdge": "force"
   }
 }
