@@ -1284,8 +1284,56 @@ function openQty(food, editIndex, opts = {}) {
   };
 }
 
+// Plat composé (photo IA) : modifier, retirer ou rééquilibrer chaque ingrédient ; les totaux sont recalculés
+function openDish(i) {
+  const e = S.days[cur].entries[i], S0 = e.items.reduce((s, x) => s + (+x.grams || 0), 0), k0 = S0 > 0 ? (e.grams || S0) / S0 : 1;
+  // ingrédients ramenés au poids actuel du plat ; fibres et micronutriments répartis au prorata des calories s'ils n'étaient pas détaillés
+  const ek = +e.kcal || 1;
+  const detailed = e.items.some(x => x.m || x.fib != null); // plats récents : fibres et micros connus par ingrédient
+  let items = e.items.map(x => { const kc = (+x.kcal || 0) * k0, share = kc / ek;
+    return { name: x.name, g0: (+x.grams || 0) * k0, g: (+x.grams || 0) * k0, kcal: kc, p: (+x.p || 0) * k0, c: (+x.c || 0) * k0, f: (+x.f || 0) * k0,
+      fib: detailed ? (+x.fib || 0) * k0 : (+e.fib || 0) * share, m: detailed ? (x.m ? mulM(x.m, k0) : null) : e.m ? mulM(e.m, share) : null }; });
+  const val = (x, key) => x.g0 > 0 ? x[key] * x.g / x.g0 : 0;
+  openSheet(`<h3>Modifier le plat</h3>
+    <label>Nom</label><input id="dN" value="${esc(e.name)}">
+    <div class="grid2" style="margin-top:8px"><div><label>Poids total (g)</label><input id="dT" type="number" inputmode="decimal"></div><div><label>Repas</label>${mealSelect(e.meal)}</div></div>
+    <div class="grid2" style="margin:-2px 0 6px">${timeInput(entryTime(e))}</div>
+    <div class="mute xs">Changer le total ajuste tous les ingrédients en proportion. Tu peux aussi corriger ou retirer un ingrédient (ex. un yaourt pris par erreur sur la photo).</div>
+    <div id="dL" style="margin-top:8px"></div>
+    <div id="calc" class="card" style="margin-top:8px"></div>
+    <div class="row wrap" style="margin-top:10px"><button class="btn pri" id="ok">Enregistrer</button><button class="btn danger" id="del">Supprimer</button><button class="btn" id="cancel">Annuler</button></div>`);
+  const tot = () => { const t = { kcal: 0, p: 0, c: 0, f: 0, fib: 0 }; let m = null, G = 0;
+    for (const x of items) { for (const kk in t) t[kk] += val(x, kk); if (x.m && x.g0 > 0) m = addM(m, mulM(x.m, x.g / x.g0)); G += x.g; }
+    if (m) t.m = m; return { t, G }; };
+  const draw = () => {
+    $('#dL').innerHTML = items.map((x, j) => `<div class="row" style="gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--line)">
+      <span style="flex:1;font-size:14px">${esc(x.name)}<span class="mute xs" style="display:block">${r0(val(x, 'kcal'))} kcal · P ${r1(val(x, 'p'))} · G ${r1(val(x, 'c'))} · L ${r1(val(x, 'f'))}</span></span>
+      <input data-ig="${j}" type="number" inputmode="decimal" value="${r1(x.g)}" style="width:74px;padding:7px"><span class="mute xs">g</span>
+      <button class="btn sm" data-rm="${j}" aria-label="Retirer">✕</button></div>`).join('');
+    const { t, G } = tot(); $('#dT').value = r1(G);
+    $('#calc').innerHTML = `<b>${r0(t.kcal)} kcal</b> · P ${r1(t.p)} g · G ${r1(t.c)} g · L ${r1(t.f)} g · Fibres ${r1(t.fib)} g`;
+    document.querySelectorAll('[data-ig]').forEach(inp => inp.onchange = () => { items[+inp.dataset.ig].g = num(inp.value) || 0; draw(); });
+    document.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { items.splice(+b.dataset.rm, 1); removed = true; draw(); });
+  };
+  let removed = false;
+  $('#dT').onchange = () => { const G = num($('#dT').value) || 0, s = items.reduce((a, x) => a + x.g, 0); if (G > 0 && s > 0) items.forEach(x => x.g = x.g * G / s); draw(); };
+  draw();
+  $('#cancel').onclick = closeSheet;
+  $('#del').onclick = () => { S.days[cur].entries.splice(i, 1); save(); closeSheet(); };
+  $('#ok').onclick = () => {
+    if (!items.length) { S.days[cur].entries.splice(i, 1); save(); closeSheet(); return; }
+    const { t, G } = tot(), meal = $('#meal').value;
+    if (e.src === 'photo' && e.aiG && !removed && Math.abs(G - (e.grams || 0)) > 0.5) recordCalib($('#dN').value || e.name, e.aiG, G);
+    const ne = { ...e, name: $('#dN').value.trim() || e.name, meal, time: pickTime(meal), grams: G, per: G ? scale(t, 10000 / G) : null, ...t,
+      items: items.map(x => ({ name: x.name, grams: r1(x.g), kcal: r1(val(x, 'kcal')), p: r1(val(x, 'p')), c: r1(val(x, 'c')), f: r1(val(x, 'f')), fib: r2(val(x, 'fib')), ...(x.m && x.g0 > 0 ? { m: mulM(x.m, x.g / x.g0) } : {}) })) };
+    if (!t.m) delete ne.m;
+    if (removed && e.aiG) ne.aiG = r0(G); // l'ingrédient retiré n'était pas dans l'assiette : pas une erreur de poids
+    S.days[cur].entries[i] = ne; save(); closeSheet();
+  };
+}
 function openEdit(i) {
   const e = S.days[cur].entries[i];
+  if (e.items && e.items.length) return openDish(i);
   if (e.per) return openQty({ name: e.name, code: e.code, per: e.per, serving: null, piece: e.piece, unit: e.unit, ...qMeta(e) }, i);
   openManual(e, i);
 }
@@ -1826,7 +1874,7 @@ function showAiItems(items, src = 'photo', plat = '') {
       const name = $('#dName').value.trim() || 'Repas';
       if (src === 'photo') recordCalib(name, GAI, G);
       day(cur).entries.push({ id: uid(), name, meal, time: defaultTime(meal), grams: G, per: G ? scale(t, 10000 / G) : null, ...t, src,
-        items: list.map(x => ({ name: x.name, grams: r1(x.g), kcal: r1(x.vals.kcal), p: r1(x.vals.p), c: r1(x.vals.c), f: r1(x.vals.f) })),
+        items: list.map(x => ({ name: x.name, grams: r1(x.g), kcal: r1(x.vals.kcal), p: r1(x.vals.p), c: r1(x.vals.c), f: r1(x.vals.f), fib: r2(x.vals.fib), ...(x.vals.m ? { m: x.vals.m } : {}) })),
         ...(src === 'photo' && GAI > 0 ? { aiG: GAI } : {}), ...(nova ? { nova, novaEst: true } : {}) });
       save(); closeSheet(); toast('Plat ajouté'); return;
     }
