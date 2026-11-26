@@ -1234,6 +1234,7 @@ function openQty(food, editIndex, opts = {}) {
     <div class="grid2" style="margin:10px 0"><div><label>Quantité (g)</label><input id="g" type="number" inputmode="decimal" value="${r1(g0)}"></div><div><label>Repas</label>${mealSelect(e ? e.meal : null)}</div></div>
     <div class="grid2" style="margin:-2px 0 10px">${timeInput(e ? entryTime(e) : defaultTime(pendingMeal || MEALS[defaultMeal()]))}${food.piece ? `<div><label>Nombre (${esc(food.unit || 'pièce')}${/s$/.test(food.unit || '') || /^c\. à/.test(food.unit || '') ? '' : 's'})</label><input id="cnt" type="number" step="1" inputmode="decimal" value="${r1(g0 / food.piece)}"></div>` : '<div></div>'}</div>
     ${food.piece ? `<div class="row wrap" style="margin-bottom:8px">${(food.piece < 15 ? [1, 5, 10, 20] : [1, 2, 3]).map(n => `<button class="btn sm" data-g="${r1(food.piece * n)}">${n} ${esc(food.unit || 'pièce')}${n > 1 && !/s$/.test(food.unit || '') && !/^c\. à/.test(food.unit || '') ? 's' : ''} (${food.piece * n < 10 ? r1(food.piece * n) : r0(food.piece * n)} g)</button>`).join('')}<button class="btn sm" data-g="100">100 g</button></div>` : ''}
+    ${e && e.src === 'photo' ? calibBox() : ''}
     <div id="unitBox" class="xs" style="margin:-4px 0 8px"><a href="#" id="unitEdit" style="color:var(--acc)">${food.piece ? `1 ${esc(food.unit || 'pièce')} = ${r1(food.piece)} g · modifier` : 'Compter à l’unité (définir le poids d’une pièce)'}</a></div>
     ${food.serving && !food.piece ? `<div class="row wrap" style="margin-bottom:8px"><button class="btn sm" data-g="${food.serving}">1 portion (${r0(food.serving)} g)</button><button class="btn sm" data-g="${food.serving * 2}">2 portions</button><button class="btn sm" data-g="100">100 g</button></div>` : ''}
     <div id="calc" class="card"></div>
@@ -1277,7 +1278,7 @@ function openQty(food, editIndex, opts = {}) {
     if ($('#fibIn') && num($('#fibIn').value) != null) { const mf = S.foods.find(f => f.name === food.name || (food.code && f.code === food.code)); if (mf) mf.per = { ...mf.per, fib: num($('#fibIn').value) }; }
     if (ingDraft && !e) { if ($('#keep') && $('#keep').checked) S.foods.push({ id: uid(), name: food.name, code: food.code, per: food.per, serving: food.serving || g }); return addIngredient(entry); }
     if (e) { for (const k of ['src', 'aiG', 'nova', 'novaEst', 'mEst', 'items']) if (e[k] != null && entry[k] == null) entry[k] = e[k];
-      if (e.src === 'photo' && Math.abs(g - (e.grams || 0)) > 0.5) { const aiG = e.aiG || e.grams; entry.aiG = aiG; S.aiCalib = (S.aiCalib || []).filter(c => !(c.n === String(food.name).slice(0, 60) && c.ai === Math.round(aiG) && c.d === today())); recordCalib(food.name, aiG, g); } }
+      if (e.src === 'photo' && calibOn() && Math.abs(g - (e.grams || 0)) > 0.5) { const aiG = e.aiG || e.grams; entry.aiG = aiG; S.aiCalib = (S.aiCalib || []).filter(c => !(c.n === String(food.name).slice(0, 60) && c.ai === Math.round(aiG) && c.d === today())); recordCalib(food.name, aiG, g); } }
     if (e) S.days[cur].entries[editIndex] = entry; else day(cur).entries.push(entry);
     if ($('#keep') && $('#keep').checked) S.foods.push({ id: uid(), name: food.name, code: food.code, per: perNow(), serving: food.serving || g });
     save(); closeSheet(); toast(e ? 'Modifié' : 'Ajouté');
@@ -1301,6 +1302,7 @@ function openDish(i) {
     <div class="mute xs">Changer le total ajuste tous les ingrédients en proportion. Tu peux aussi corriger ou retirer un ingrédient (ex. un yaourt pris par erreur sur la photo).</div>
     <div id="dL" style="margin-top:8px"></div>
     <div id="calc" class="card" style="margin-top:8px"></div>
+    ${e.src === 'photo' ? calibBox() : ''}
     <div class="row wrap" style="margin-top:10px"><button class="btn pri" id="ok">Enregistrer</button><button class="btn danger" id="del">Supprimer</button><button class="btn" id="cancel">Annuler</button></div>`);
   const tot = () => { const t = { kcal: 0, p: 0, c: 0, f: 0, fib: 0 }; let m = null, G = 0;
     for (const x of items) { for (const kk in t) t[kk] += val(x, kk); if (x.m && x.g0 > 0) m = addM(m, mulM(x.m, x.g / x.g0)); G += x.g; }
@@ -1323,7 +1325,7 @@ function openDish(i) {
   $('#ok').onclick = () => {
     if (!items.length) { S.days[cur].entries.splice(i, 1); save(); closeSheet(); return; }
     const { t, G } = tot(), meal = $('#meal').value;
-    if (e.src === 'photo' && e.aiG && !removed && Math.abs(G - (e.grams || 0)) > 0.5) recordCalib($('#dN').value || e.name, e.aiG, G);
+    if (e.src === 'photo' && calibOn() && e.aiG && !removed && Math.abs(G - (e.grams || 0)) > 0.5) recordCalib($('#dN').value || e.name, e.aiG, G);
     const ne = { ...e, name: $('#dN').value.trim() || e.name, meal, time: pickTime(meal), grams: G, per: G ? scale(t, 10000 / G) : null, ...t,
       items: items.map(x => ({ name: x.name, grams: r1(x.g), kcal: r1(val(x, 'kcal')), p: r1(val(x, 'p')), c: r1(val(x, 'c')), f: r1(val(x, 'f')), fib: r2(val(x, 'fib')), ...(x.m && x.g0 > 0 ? { m: mulM(x.m, x.g / x.g0) } : {}) })) };
     if (!t.m) delete ne.m;
@@ -1782,6 +1784,9 @@ function openFiberIdeas() {
   document.querySelectorAll('#fibl .it').forEach(el => el.onclick = () => { const f = list[+el.dataset.i]; openQty({ name: f.name, per: f.per, serving: f.serving }); });
 }
 // Calibration personnelle : quand tu corriges le poids estimé par l'IA (balance), l'écart est retenu et rappelé dans les prochaines analyses
+// Case « j'ai pesé » : on n'apprend que d'une vraie pesée, pas d'une portion partielle (3 bonbons sur une boîte photographiée)
+const calibBox = () => `<label class="row" style="color:var(--ink);font-size:14px;margin-top:10px;align-items:flex-start"><input type="checkbox" id="wCal" style="margin-top:3px"> <span>J’ai pesé : l’IA apprend de ma correction<span class="mute xs" style="display:block">Laisse décoché si tu n’as mangé qu’une partie de ce qui est sur la photo.</span></span></label>`;
+const calibOn = () => !!($('#wCal') && $('#wCal').checked);
 function recordCalib(name, ai, real) {
   if (!(ai > 0) || !(real > 0) || Math.abs(real - ai) / ai < 0.1) return;
   S.aiCalib = [...(S.aiCalib || []), { n: String(name).slice(0, 60), ai: Math.round(ai), real: Math.round(real), d: today() }].slice(-40);
@@ -1834,6 +1839,7 @@ function showAiItems(items, src = 'photo', plat = '') {
     <div class="n"><input class="k" type="number" value="${r0(it.kcal)}"><input class="p" type="number" value="${r1(it.proteines)}"><input class="c" type="number" value="${r1(it.glucides)}"><input class="f" type="number" value="${r1(it.lipides)}"></div>
     <input type="hidden" class="fb" value="${r1(it.fibres)}"><input type="hidden" class="mi" value="${esc(JSON.stringify(aiMicros(it.micro) || null))}" data-g0="${num(it.grammes) || 0}" data-k0="${num(it.kcal) || 0}"><input type="hidden" class="nv" value="${[1, 2, 3, 4].includes(+it.nova) ? +it.nova : ''}"></div>`).join('') + `</details>
      ${multi ? `<label class="row" style="color:var(--ink);font-size:14px;margin-top:10px"><input type="checkbox" id="asDish" checked> Enregistrer comme un seul plat (sinon un aliment par ingrédient)</label>` : ''}
+     ${src === 'photo' ? calibBox() : ''}
      <div class="row" style="margin-top:10px"><label style="margin:0">Repas</label>${mealSelect(null)}</div>
      <button class="btn pri" id="aiAdd" style="margin-top:10px">Ajouter</button>`;
   const rows = () => [...out.querySelectorAll('.ai-row')].filter(r => r.querySelector('.ck').checked);
@@ -1872,14 +1878,14 @@ function showAiItems(items, src = 'photo', plat = '') {
       for (const x of list) { for (const k in t) t[k] += x.vals[k]; if (x.vals.m) m = addM(m, x.vals.m); G += x.g; GAI += x.gAI || 0; if (x.nova) nova = Math.max(nova || 0, x.nova); }
       if (m) t.m = m;
       const name = $('#dName').value.trim() || 'Repas';
-      if (src === 'photo') recordCalib(name, GAI, G);
+      if (src === 'photo' && calibOn()) recordCalib(name, GAI, G);
       day(cur).entries.push({ id: uid(), name, meal, time: defaultTime(meal), grams: G, per: G ? scale(t, 10000 / G) : null, ...t, src,
         items: list.map(x => ({ name: x.name, grams: r1(x.g), kcal: r1(x.vals.kcal), p: r1(x.vals.p), c: r1(x.vals.c), f: r1(x.vals.f), fib: r2(x.vals.fib), ...(x.vals.m ? { m: x.vals.m } : {}) })),
         ...(src === 'photo' && GAI > 0 ? { aiG: GAI } : {}), ...(nova ? { nova, novaEst: true } : {}) });
       save(); closeSheet(); toast('Plat ajouté'); return;
     }
     for (const x of list) {
-      if (src === 'photo') recordCalib(x.name, x.gAI, x.g);
+      if (src === 'photo' && calibOn()) recordCalib(x.name, x.gAI, x.g);
       day(cur).entries.push({ id: uid(), name: x.name, meal, time: defaultTime(meal), grams: x.g, per: x.g ? scale(x.vals, 10000 / x.g) : null, ...x.vals, src, ...(src === 'photo' && x.gAI > 0 ? { aiG: x.gAI } : {}), ...(x.nova ? { nova: x.nova, novaEst: true } : {}) });
     }
     save(); closeSheet(); toast(list.length + ' aliment(s) ajouté(s)');
